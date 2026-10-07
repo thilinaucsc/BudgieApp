@@ -1,11 +1,14 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import '../db/database_helper.dart';
 import '../models/expense.dart';
 import '../models/expense_category.dart';
+import '../services/gemini_service.dart';
 
 class AddExpenseScreen extends StatefulWidget {
-  final Expense? expense; // null = add new, not null = edit
+  final Expense? expense;
   const AddExpenseScreen({super.key, this.expense});
 
   @override
@@ -18,6 +21,7 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
   late final TextEditingController _note;
   late String _category;
   late DateTime _date;
+  bool _scanning = false;
 
   bool get isEdit => widget.expense != null;
 
@@ -48,6 +52,37 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
     if (picked != null) setState(() => _date = picked);
   }
 
+  Future<void> _scanBill() async {
+    final db = DatabaseHelper.instance;
+    final key = await db.getSetting('gemini_api_key', '');
+    if (key.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Set your Gemini API key in Settings to use bill scanning.')),
+        );
+      }
+      return;
+    }
+    final picked = await ImagePicker().pickImage(source: ImageSource.gallery);
+    if (picked == null || !mounted) return;
+    setState(() => _scanning = true);
+    final result = await GeminiService(apiKey: key).extractFromReceipt(File(picked.path));
+    if (!mounted) return;
+    setState(() => _scanning = false);
+    if (result == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not read bill. Please fill in manually.')),
+      );
+      return;
+    }
+    setState(() {
+      if (result.amount != null) _amount.text = result.amount!.toStringAsFixed(2);
+      if (result.date != null) _date = result.date!;
+      if (result.category != null) _category = result.category!;
+      if (result.note != null) _note.text = result.note!;
+    });
+  }
+
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
     final expense = Expense(
@@ -69,7 +104,22 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text(isEdit ? 'Edit expense' : 'Add expense')),
+      appBar: AppBar(
+        title: Text(isEdit ? 'Edit expense' : 'Add expense'),
+        actions: [
+          if (_scanning)
+            const Padding(
+              padding: EdgeInsets.all(14),
+              child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)),
+            )
+          else
+            IconButton(
+              icon: const Icon(Icons.camera_alt_outlined),
+              tooltip: 'Scan bill',
+              onPressed: _scanBill,
+            ),
+        ],
+      ),
       body: Form(
         key: _formKey,
         child: ListView(
