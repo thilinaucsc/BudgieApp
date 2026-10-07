@@ -26,7 +26,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
   final _formKey = GlobalKey<FormState>();
   final _budget = TextEditingController();
   final _currency = TextEditingController();
-  final _geminiKey = TextEditingController();
   final db = DatabaseHelper.instance;
 
   bool _pinSet = false;
@@ -46,12 +45,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
       final c = await db.getSetting('currency', 'Rs.');
       final pinHash = await db.getSetting('pin_hash', '');
       final googleAccount = await db.getSetting('google_account', '');
-      final geminiKey = await db.getSetting('gemini_api_key', '');
       if (!mounted) return;
       setState(() {
         _budget.text = b == null ? '' : b.toStringAsFixed(0);
         _currency.text = c;
-        _geminiKey.text = geminiKey;
         if (widget.initialPinSet == null) {
           _pinSet = pinHash.isNotEmpty;
         }
@@ -68,7 +65,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
   void dispose() {
     _budget.dispose();
     _currency.dispose();
-    _geminiKey.dispose();
     super.dispose();
   }
 
@@ -79,7 +75,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
       await db.setBudget(widget.month, double.parse(text));
     }
     await db.setSetting('currency', _currency.text.trim());
-    await db.setSetting('gemini_api_key', _geminiKey.text.trim());
     if (mounted) Navigator.pop(context, true);
   }
 
@@ -264,20 +259,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
               },
             ),
 
-            const Divider(height: 8),
-
-            // ── Gemini API Key ───────────────────────────────────────────────
-            const SizedBox(height: 12),
-            TextFormField(
-              controller: _geminiKey,
-              obscureText: true,
-              decoration: const InputDecoration(
-                labelText: 'Gemini API Key',
-                hintText: 'Get free key at ai.google.dev',
-                border: OutlineInputBorder(),
-                helperText: 'Used to scan bills automatically from photos.',
-              ),
-            ),
             const SizedBox(height: 8),
           ],
         ),
