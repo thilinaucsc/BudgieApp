@@ -53,8 +53,33 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
     if (picked != null) setState(() => _date = picked);
   }
 
+  Future<ImageSource?> _pickSource() async {
+    return showModalBottomSheet<ImageSource>(
+      context: context,
+      builder: (_) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.camera_alt_outlined),
+              title: const Text('Take photo'),
+              onTap: () => Navigator.pop(context, ImageSource.camera),
+            ),
+            ListTile(
+              leading: const Icon(Icons.photo_library_outlined),
+              title: const Text('Choose from gallery'),
+              onTap: () => Navigator.pop(context, ImageSource.gallery),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Future<void> _scanBill() async {
-    final picked = await ImagePicker().pickImage(source: ImageSource.gallery);
+    final source = await _pickSource();
+    if (source == null || !mounted) return;
+    final picked = await ImagePicker().pickImage(source: source);
     if (picked == null || !mounted) return;
     setState(() => _scanning = true);
     final db = DatabaseHelper.instance;
