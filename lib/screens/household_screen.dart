@@ -169,17 +169,74 @@ class _HouseholdScreenState extends State<HouseholdScreen>
         subtitle: Text(
           'Stock: ${_fmt(item.quantity)} ${item.unit}  •  Min: ${_fmt(item.minQuantity)} ${item.unit}',
         ),
-        trailing: item.isLow
-            ? const Chip(
-                label: Text('Low', style: TextStyle(color: Colors.white)),
-                backgroundColor: Colors.red,
-                padding: EdgeInsets.zero,
-              )
-            : null,
+        trailing: _itemTileTrailing(item),
         onTap: () => _openForm(item),
       ),
     );
   }
+
+  Future<void> _useItem(HouseholdItem item) async {
+    final controller = TextEditingController(text: '1');
+    final confirmed = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      builder: (ctx) => Padding(
+        padding: EdgeInsets.only(
+          left: 24, right: 24, top: 24,
+          bottom: MediaQuery.of(ctx).viewInsets.bottom + 24,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('How much did you use?',
+                style: Theme.of(ctx).textTheme.titleMedium),
+            const SizedBox(height: 12),
+            TextField(
+              controller: controller,
+              autofocus: true,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              decoration: InputDecoration(
+                suffixText: item.unit,
+                border: const OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 16),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('Use'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (confirmed != true) return;
+    final used = double.tryParse(controller.text) ?? 0;
+    if (used <= 0) return;
+    item.quantity = (item.quantity - used).clamp(0, double.infinity);
+    await db.updateItem(item);
+    _load();
+  }
+
+  Widget _itemTileTrailing(HouseholdItem item) => Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (item.isLow)
+            const Chip(
+              label: Text('Low', style: TextStyle(color: Colors.white)),
+              backgroundColor: Colors.red,
+              padding: EdgeInsets.zero,
+            ),
+          IconButton(
+            icon: const Icon(Icons.remove_circle_outline),
+            tooltip: 'Record usage',
+            onPressed: () => _useItem(item),
+          ),
+        ],
+      );
 
   String _fmt(double v) =>
       v == v.truncateToDouble() ? v.toInt().toString() : v.toString();
