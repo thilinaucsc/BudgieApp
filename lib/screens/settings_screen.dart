@@ -135,6 +135,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       ),
     );
     if (confirmed == true) {
+      await db.wipeAll();
       await BackupService.instance.restoreData();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

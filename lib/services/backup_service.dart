@@ -117,7 +117,6 @@ class BackupService {
   Future<void> restoreData() async {
     final data = _pendingRestore;
     if (data == null) return;
-    _pendingRestore = null;
     final db = DatabaseHelper.instance;
     final raw = await db.database;
 
@@ -137,6 +136,9 @@ class BackupService {
       await raw.insert('settings', Map<String, dynamic>.from(row as Map),
           conflictAlgorithm: ConflictAlgorithm.replace);
     }
+    // Only clear pending data after all inserts succeed; if an insert throws,
+    // the caller can retry by calling restoreData() again.
+    _pendingRestore = null;
   }
 
   // ── Serialise ─────────────────────────────────────────────────────────────
