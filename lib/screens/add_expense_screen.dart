@@ -6,6 +6,7 @@ import '../db/database_helper.dart';
 import '../models/expense.dart';
 import '../models/expense_category.dart';
 import '../services/gemini_service.dart';
+import '../services/mlkit_service.dart';
 
 class AddExpenseScreen extends StatefulWidget {
   final Expense? expense;
@@ -53,20 +54,14 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
   }
 
   Future<void> _scanBill() async {
-    final db = DatabaseHelper.instance;
-    final key = await db.getSetting('gemini_api_key', '');
-    if (key.isEmpty) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Set your Gemini API key in Settings to use bill scanning.')),
-        );
-      }
-      return;
-    }
     final picked = await ImagePicker().pickImage(source: ImageSource.gallery);
     if (picked == null || !mounted) return;
     setState(() => _scanning = true);
-    final result = await GeminiService(apiKey: key).extractFromReceipt(File(picked.path));
+    final db = DatabaseHelper.instance;
+    final key = await db.getSetting('gemini_api_key', '');
+    final result = key.isNotEmpty
+        ? await GeminiService(apiKey: key).extractFromReceipt(File(picked.path))
+        : await MlKitService().extractFromReceipt(File(picked.path));
     if (!mounted) return;
     setState(() => _scanning = false);
     if (result == null) {
