@@ -1,7 +1,11 @@
+import 'dart:convert';
+import 'package:crypto/crypto.dart';
 import 'package:path/path.dart';
 import 'package:sqflite/sqflite.dart';
 import '../models/expense.dart';
 import '../models/household_item.dart';
+
+String hashPin(String pin) => sha256.convert(utf8.encode(pin)).toString();
 
 /// All data is stored in a local SQLite file on the phone. No internet needed.
 class DatabaseHelper {
@@ -161,5 +165,13 @@ class DatabaseHelper {
       {'key': key, 'value': value},
       conflictAlgorithm: ConflictAlgorithm.replace,
     );
+  }
+
+  Future<void> wipeAll() async {
+    final db = await database;
+    final path = db.path;
+    await db.close();
+    _db = null;
+    await deleteDatabase(path);
   }
 }
