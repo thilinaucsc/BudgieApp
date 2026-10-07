@@ -1,7 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:google_generative_ai/google_generative_ai.dart';
-import '../models/expense_category.dart';
 import '../models/extracted_expense.dart';
 
 class GeminiService {

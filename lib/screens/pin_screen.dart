@@ -92,6 +92,7 @@ class _PinScreenState extends State<PinScreen> with SingleTickerProviderStateMix
       );
       if (changed == true && mounted) Navigator.pushReplacementNamed(context, '/home');
     } else {
+      if (!mounted) return;
       final confirm = await showDialog<bool>(
         context: context,
         builder: (c) => AlertDialog(
@@ -105,7 +106,7 @@ class _PinScreenState extends State<PinScreen> with SingleTickerProviderStateMix
       );
       if (confirm == true && mounted) {
         await db.wipeAll();
-        Navigator.pushReplacementNamed(context, '/home');
+        if (mounted) Navigator.pushReplacementNamed(context, '/home');
       }
     }
   }
