@@ -4,8 +4,13 @@ import 'screens/home_screen.dart';
 import 'screens/household_screen.dart';
 import 'screens/pin_screen.dart';
 import 'services/backup_service.dart';
+import 'services/premium_service.dart';
 
-void main() => runApp(const ExpenseApp());
+void main() {
+  WidgetsFlutterBinding.ensureInitialized();
+  PremiumService.instance.initialize();
+  runApp(const ExpenseApp());
+}
 
 class ExpenseApp extends StatelessWidget {
   const ExpenseApp({super.key});

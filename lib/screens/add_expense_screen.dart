@@ -7,6 +7,8 @@ import '../models/expense.dart';
 import '../models/expense_category.dart';
 import '../services/gemini_service.dart';
 import '../services/mlkit_service.dart';
+import '../services/premium_service.dart';
+import 'premium_screen.dart';
 
 class AddExpenseScreen extends StatefulWidget {
   final Expense? expense;
@@ -51,6 +53,19 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
       lastDate: DateTime(2100),
     );
     if (picked != null) setState(() => _date = picked);
+  }
+
+  Future<void> _scanBillGated() async {
+    final premium = await PremiumService.instance.isPremium();
+    if (!mounted) return;
+    if (!premium) {
+      await Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => const PremiumScreen()),
+      );
+      return;
+    }
+    _scanBill();
   }
 
   Future<ImageSource?> _pickSource() async {
@@ -136,7 +151,7 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
             IconButton(
               icon: const Icon(Icons.camera_alt_outlined),
               tooltip: 'Scan bill',
-              onPressed: _scanBill,
+              onPressed: _scanBillGated,
             ),
         ],
       ),

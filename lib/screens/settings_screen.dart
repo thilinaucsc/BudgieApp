@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../db/database_helper.dart';
 import '../services/backup_service.dart';
+import '../services/premium_service.dart';
+import 'premium_screen.dart';
 import 'set_pin_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -229,6 +231,38 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 onTap: _restoreFromCloud,
               ),
             ],
+
+            const Divider(height: 8),
+
+            // ── Premium ──────────────────────────────────────────────────────
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: const Icon(Icons.star_outline_rounded),
+              title: const Text('Upgrade to Premium'),
+              subtitle: const Text('Unlock bill photo scanning'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const PremiumScreen()),
+              ),
+            ),
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: const Icon(Icons.restore_page_outlined),
+              title: const Text('Restore purchase'),
+              onTap: () async {
+                final messenger = ScaffoldMessenger.of(context);
+                await PremiumService.instance.restore();
+                if (!mounted) return;
+                final premium = await PremiumService.instance.isPremium();
+                if (!mounted) return;
+                messenger.showSnackBar(SnackBar(
+                  content: Text(premium
+                      ? 'Premium restored!'
+                      : 'No previous purchase found.'),
+                ));
+              },
+            ),
 
             const Divider(height: 8),
 
