@@ -65,7 +65,7 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
       );
       return;
     }
-    _scanBill();
+    await _scanBill();
   }
 
   Future<ImageSource?> _pickSource() async {
@@ -106,7 +106,10 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
     setState(() => _scanning = false);
     if (result == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Could not read bill. Please fill in manually.')),
+        const SnackBar(
+          content: Text('Could not read bill — try better lighting or a clearer photo.'),
+          duration: Duration(seconds: 4),
+        ),
       );
       return;
     }

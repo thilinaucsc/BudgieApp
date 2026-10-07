@@ -1,21 +1,19 @@
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
 import '../models/extracted_expense.dart';
 
 class MlKitService {
-  // Keywords that typically precede the payable total on a receipt.
   static final _totalKeywords = RegExp(
-    r'\b(grand\s+total|total\s+due|amount\s+due|net\s+total|total\s+payable|total)\b',
+    r'\b(grand\s+total|total\s+due|amount\s+due|net\s+total|total\s+payable|bill\s+total|sub\s*total|total)\b',
     caseSensitive: false,
   );
 
-  // Currency amount: optional symbol, digits, optional decimal part.
-  static final _amountPattern = RegExp(r'[\d,]+(?:\.\d{1,2})?');
+  // Matches numbers like 1234 / 1,234 / 1234.50 / 1,234.50
+  static final _amountPattern = RegExp(r'\d[\d,]*(?:\.\d{1,2})?');
 
   static final _datePatterns = [
-    // YYYY-MM-DD or YYYY/MM/DD
     RegExp(r'\b(\d{4})[-/](\d{1,2})[-/](\d{1,2})\b'),
-    // DD/MM/YYYY or DD-MM-YYYY
     RegExp(r'\b(\d{1,2})[/\-](\d{1,2})[/\-](\d{4})\b'),
   ];
 
@@ -24,35 +22,42 @@ class MlKitService {
 
     final lines = text.split('\n');
 
-    // 1. Look for a line with a total keyword and extract its last number.
+    // 1. Find line with total keyword — prefer lines further down (last match wins)
     double? amount;
     for (final line in lines) {
       if (_totalKeywords.hasMatch(line)) {
         final matches = _amountPattern.allMatches(line).toList();
-        if (matches.isNotEmpty) {
-          amount = _parseAmount(matches.last.group(0)!);
-          break;
+        for (final m in matches.reversed) {
+          final v = _parseAmount(m.group(0)!);
+          if (v != null && v > 0 && v < 10000000) {
+            amount = v;
+            break;
+          }
         }
       }
     }
 
-    // 2. Fallback: largest number in the entire receipt.
+    // 2. Fallback: largest plausible price on the receipt
     if (amount == null) {
       double? largest;
       for (final match in _amountPattern.allMatches(text)) {
         final v = _parseAmount(match.group(0)!);
-        if (v != null && (largest == null || v > largest)) largest = v;
+        // Skip barcodes / phone numbers (more than 7 significant digits)
+        if (v == null || v <= 0 || v >= 10000000) continue;
+        final digits = match.group(0)!.replaceAll(',', '').replaceAll('.', '');
+        if (digits.length > 7) continue;
+        if (largest == null || v > largest) largest = v;
       }
       if (largest == null) return null;
       amount = largest;
     }
 
-    // 3. Date extraction.
+    // 3. Date
     DateTime? date;
     outer:
     for (final pattern in _datePatterns) {
       for (final match in pattern.allMatches(text)) {
-        final parsed = _parseDate(match, pattern);
+        final parsed = _parseDate(match);
         if (parsed != null) {
           date = parsed;
           break outer;
@@ -63,25 +68,25 @@ class MlKitService {
     return ExtractedExpense(amount: amount, date: date);
   }
 
-  static double? _parseAmount(String s) =>
-      double.tryParse(s.replaceAll(',', ''));
+  static double? _parseAmount(String s) {
+    final v = double.tryParse(s.replaceAll(',', ''));
+    return (v != null && v > 0) ? v : null;
+  }
 
-  static DateTime? _parseDate(RegExpMatch m, RegExp pattern) {
+  static DateTime? _parseDate(RegExpMatch m) {
     try {
-      // YYYY-?-? pattern has 4-digit year first
       if (m.group(1)!.length == 4) {
-        return DateTime(
-          int.parse(m.group(1)!),
-          int.parse(m.group(2)!),
-          int.parse(m.group(3)!),
-        );
+        final y = int.parse(m.group(1)!);
+        final mo = int.parse(m.group(2)!);
+        final d = int.parse(m.group(3)!);
+        if (mo < 1 || mo > 12 || d < 1 || d > 31) return null;
+        return DateTime(y, mo, d);
       } else {
-        // DD/MM/YYYY — day first, year last
-        return DateTime(
-          int.parse(m.group(3)!),
-          int.parse(m.group(2)!),
-          int.parse(m.group(1)!),
-        );
+        final d = int.parse(m.group(1)!);
+        final mo = int.parse(m.group(2)!);
+        final y = int.parse(m.group(3)!);
+        if (mo < 1 || mo > 12 || d < 1 || d > 31) return null;
+        return DateTime(y, mo, d);
       }
     } catch (_) {
       return null;
@@ -93,8 +98,10 @@ class MlKitService {
     try {
       final inputImage = InputImage.fromFile(imageFile);
       final result = await recognizer.processImage(inputImage);
+      debugPrint('[MlKit] OCR text (${result.text.length} chars): ${result.text}');
       return parseReceiptText(result.text);
-    } catch (_) {
+    } catch (e) {
+      debugPrint('[MlKit] Error: $e');
       return null;
     } finally {
       await recognizer.close();
