@@ -84,7 +84,6 @@ class _PremiumScreenState extends State<PremiumScreen> {
             else ...[
               FilledButton(
                 onPressed: _buy,
-                style: FilledButton.styleFrom(padding: const EdgeInsets.all(16)),
                 child: const Text('Unlock Premium'),
               ),
               const SizedBox(height: 12),

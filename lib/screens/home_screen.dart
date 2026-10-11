@@ -71,12 +71,13 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Budgie'),
+        title: const Text('Budgie', style: TextStyle(fontWeight: FontWeight.bold)),
         actions: [
           IconButton(
-            icon: const Icon(Icons.pie_chart),
+            icon: const Icon(Icons.pie_chart_outline_rounded),
             tooltip: 'Reports',
             onPressed: () => Navigator.push(
               context,
@@ -86,7 +87,7 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ),
           IconButton(
-            icon: const Icon(Icons.settings),
+            icon: const Icon(Icons.settings_outlined),
             tooltip: 'Settings',
             onPressed: () async {
               final changed = await Navigator.push<bool>(
@@ -107,96 +108,161 @@ class _HomeScreenState extends State<HomeScreen> {
           ? const Center(child: CircularProgressIndicator())
           : Column(
               children: [
-                _monthBar(),
-                _budgetCard(),
-                const Divider(height: 1),
-                Expanded(child: _expenseList()),
+                _monthBar(cs),
+                _budgetCard(cs),
+                Expanded(child: _expenseList(cs)),
               ],
             ),
     );
   }
 
-  Widget _monthBar() => Row(
+  Widget _monthBar(ColorScheme cs) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+      child: Row(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          IconButton(icon: const Icon(Icons.chevron_left), onPressed: () => _changeMonth(-1)),
-          Text(
-            DateFormat('MMMM yyyy').format(month),
-            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+          Container(
+            decoration: BoxDecoration(
+              color: cs.surfaceContainerHighest,
+              borderRadius: BorderRadius.circular(24),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.chevron_left),
+                  visualDensity: VisualDensity.compact,
+                  onPressed: () => _changeMonth(-1),
+                ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  child: Text(
+                    DateFormat('MMMM yyyy').format(month),
+                    style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.chevron_right),
+                  visualDensity: VisualDensity.compact,
+                  onPressed: () => _changeMonth(1),
+                ),
+              ],
+            ),
           ),
-          IconButton(icon: const Icon(Icons.chevron_right), onPressed: () => _changeMonth(1)),
         ],
-      );
-
-  Widget _budgetCard() {
-    final spent = total;
-    if (budget == null || budget == 0) {
-      return Card(
-        margin: const EdgeInsets.all(12),
-        child: ListTile(
-          title: Text('Spent: $currency ${money.format(spent)}'),
-          subtitle: const Text('Set a monthly budget in Settings to track your limit.'),
-        ),
-      );
-    }
-
-    final limit = budget!;
-    final ratio = spent / limit;
-    final left = limit - spent;
-
-    Color color = Colors.green;
-    String? warning;
-    if (ratio >= 1) {
-      color = Colors.red;
-      warning = 'You are over your budget.';
-    } else if (ratio >= 0.8) {
-      color = Colors.orange;
-      warning = 'You have used 80% of your budget.';
-    }
-
-    return Card(
-      margin: const EdgeInsets.all(12),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Spent $currency ${money.format(spent)} of ${money.format(limit)}',
-              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-            ),
-            const SizedBox(height: 10),
-            LinearProgressIndicator(
-              value: ratio.clamp(0.0, 1.0).toDouble(),
-              minHeight: 10,
-              color: color,
-              backgroundColor: color.withAlpha(40),
-              borderRadius: BorderRadius.circular(5),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              left >= 0
-                  ? 'Left: $currency ${money.format(left)}'
-                  : 'Over by: $currency ${money.format(-left)}',
-              style: TextStyle(color: color),
-            ),
-            if (warning != null)
-              Padding(
-                padding: const EdgeInsets.only(top: 4),
-                child: Text(warning, style: TextStyle(color: color, fontWeight: FontWeight.bold)),
-              ),
-          ],
-        ),
       ),
     );
   }
 
-  Widget _expenseList() {
+  Widget _budgetCard(ColorScheme cs) {
+    final spent = total;
+    final darkColor = Color.lerp(cs.primary, Colors.black, 0.25)!;
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [darkColor, cs.primary],
+        ),
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: cs.primary.withValues(alpha: 0.35),
+            blurRadius: 12,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Total Spent',
+            style: TextStyle(color: Colors.white.withValues(alpha: 0.75), fontSize: 13),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            '$currency ${money.format(spent)}',
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 30,
+              fontWeight: FontWeight.bold,
+              letterSpacing: -0.5,
+            ),
+          ),
+          if (budget != null && budget! > 0) ...[
+            const SizedBox(height: 16),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(4),
+              child: LinearProgressIndicator(
+                value: (spent / budget!).clamp(0.0, 1.0),
+                minHeight: 6,
+                backgroundColor: Colors.white.withValues(alpha: 0.25),
+                valueColor: AlwaysStoppedAnimation<Color>(
+                  spent > budget! ? Colors.red[300]! : Colors.white,
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'Budget: $currency ${money.format(budget!)}',
+                  style: TextStyle(color: Colors.white.withValues(alpha: 0.7), fontSize: 12),
+                ),
+                Text(
+                  budget! - spent >= 0
+                      ? 'Left: $currency ${money.format(budget! - spent)}'
+                      : 'Over: $currency ${money.format(spent - budget!)}',
+                  style: TextStyle(
+                    color: spent > budget! ? Colors.red[200]! : Colors.white,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ] else ...[
+            const SizedBox(height: 8),
+            Text(
+              'Set a budget in Settings to track your limit',
+              style: TextStyle(color: Colors.white.withValues(alpha: 0.65), fontSize: 12),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _expenseList(ColorScheme cs) {
     if (expenses.isEmpty) {
-      return const Center(child: Text('No expenses this month. Tap + to add one.'));
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.receipt_long_outlined, size: 72, color: cs.outlineVariant),
+            const SizedBox(height: 16),
+            Text(
+              'No expenses this month',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500, color: cs.onSurface),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Tap + to record your first expense',
+              style: TextStyle(color: cs.outline, fontSize: 14),
+            ),
+          ],
+        ),
+      );
     }
+
     return ListView.builder(
-      padding: const EdgeInsets.only(bottom: 80),
+      padding: const EdgeInsets.only(bottom: 88),
       itemCount: expenses.length,
       itemBuilder: (_, i) {
         final e = expenses[i];
@@ -204,11 +270,17 @@ class _HomeScreenState extends State<HomeScreen> {
         return Dismissible(
           key: ValueKey(e.id),
           direction: DismissDirection.endToStart,
-          background: Container(
-            color: Colors.red,
-            alignment: Alignment.centerRight,
-            padding: const EdgeInsets.only(right: 20),
-            child: const Icon(Icons.delete, color: Colors.white),
+          background: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 3),
+            child: Container(
+              decoration: BoxDecoration(
+                color: cs.errorContainer,
+                borderRadius: BorderRadius.circular(16),
+              ),
+              alignment: Alignment.centerRight,
+              padding: const EdgeInsets.only(right: 20),
+              child: Icon(Icons.delete_outline_rounded, color: cs.onErrorContainer),
+            ),
           ),
           confirmDismiss: (_) => _confirmDelete(),
           onDismissed: (_) async {
@@ -216,20 +288,56 @@ class _HomeScreenState extends State<HomeScreen> {
             await db.deleteExpense(e.id!);
             _load();
           },
-          child: ListTile(
-            leading: CircleAvatar(
-              backgroundColor: cat.color.withAlpha(40),
-              child: Icon(cat.icon, color: cat.color),
+          child: Card(
+            margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 3),
+            child: InkWell(
+              onTap: () => _openForm(e),
+              borderRadius: BorderRadius.circular(16),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 44,
+                      height: 44,
+                      decoration: BoxDecoration(
+                        color: cat.color.withAlpha(30),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Icon(cat.icon, color: cat.color, size: 22),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            e.category,
+                            style: const TextStyle(fontWeight: FontWeight.w500, fontSize: 15),
+                          ),
+                          Text(
+                            DateFormat('d MMM').format(e.date) +
+                                (e.note.isEmpty ? '' : '  ·  ${e.note}'),
+                            style: TextStyle(color: cs.outline, fontSize: 12),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      '$currency ${money.format(e.amount)}',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 15,
+                        color: cs.primary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ),
-            title: Text(e.category),
-            subtitle: Text(
-              DateFormat('d MMM').format(e.date) + (e.note.isEmpty ? '' : '  •  ${e.note}'),
-            ),
-            trailing: Text(
-              '$currency ${money.format(e.amount)}',
-              style: const TextStyle(fontWeight: FontWeight.bold),
-            ),
-            onTap: () => _openForm(e),
           ),
         );
       },

@@ -159,7 +159,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 labelText: 'Monthly budget from $monthName',
                 helperText:
                     'This budget also applies to later months until you change it.',
-                border: const OutlineInputBorder(),
               ),
               validator: (v) {
                 final t = (v ?? '').trim();
@@ -175,7 +174,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
               decoration: const InputDecoration(
                 labelText: 'Currency symbol',
                 hintText: r'Rs., $, €',
-                border: OutlineInputBorder(),
               ),
               validator: (v) =>
                   (v ?? '').trim().isEmpty ? 'Enter a currency symbol' : null,
@@ -183,7 +181,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
             const SizedBox(height: 24),
             FilledButton(
               onPressed: _save,
-              style: FilledButton.styleFrom(padding: const EdgeInsets.all(16)),
               child: const Text('Save settings'),
             ),
             const Divider(height: 40),

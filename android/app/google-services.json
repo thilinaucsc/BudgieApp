@@ -1,31 +1,37 @@
 {
   "project_info": {
-    "project_number": "REPLACE_WITH_YOUR_PROJECT_NUMBER",
-    "project_id": "REPLACE_WITH_YOUR_PROJECT_ID",
-    "storage_bucket": "REPLACE_WITH_YOUR_PROJECT_ID.appspot.com"
+    "project_number": "639838619096",
+    "firebase_url": "https://my-project-1484819075765.firebaseio.com",
+    "project_id": "my-project-1484819075765",
+    "storage_bucket": "my-project-1484819075765.firebasestorage.app"
   },
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:REPLACE_WITH_YOUR_PROJECT_NUMBER:android:REPLACE_WITH_APP_ID",
+        "mobilesdk_app_id": "1:639838619096:android:1728b9ff50cbe7851f5ead",
         "android_client_info": {
           "package_name": "com.thilina.budgie"
         }
       },
       "oauth_client": [
         {
-          "client_id": "REPLACE_WITH_YOUR_WEB_CLIENT_ID.apps.googleusercontent.com",
+          "client_id": "639838619096-fcop4g64ak5jcbti1mo678sr9bttccp3.apps.googleusercontent.com",
           "client_type": 3
         }
       ],
       "api_key": [
         {
-          "current_key": "REPLACE_WITH_YOUR_API_KEY"
+          "current_key": "AIzaSyDxUpW2gw-H-KyFK8wDwjLWH7OQTzlbXEg"
         }
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "639838619096-13tpvgo00afs474s8pao1h5j5jkhhakn.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
         }
       }
     }

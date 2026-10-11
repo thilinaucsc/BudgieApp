@@ -49,6 +49,7 @@ class _SetPinScreenState extends State<SetPinScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
     return Scaffold(
       appBar: AppBar(title: const Text('Set PIN')),
       body: Column(
@@ -59,7 +60,7 @@ class _SetPinScreenState extends State<SetPinScreen> {
             style: Theme.of(context).textTheme.titleLarge,
           ),
           const SizedBox(height: 24),
-          _dots(),
+          _dots(cs),
           const SizedBox(height: 32),
           _numpad(),
         ],
@@ -67,14 +68,18 @@ class _SetPinScreenState extends State<SetPinScreen> {
     );
   }
 
-  Widget _dots() => Row(
+  Widget _dots(ColorScheme cs) => Row(
         mainAxisAlignment: MainAxisAlignment.center,
         children: List.generate(4, (i) => Container(
           margin: const EdgeInsets.symmetric(horizontal: 8),
           width: 18, height: 18,
           decoration: BoxDecoration(
             shape: BoxShape.circle,
-            color: i < _digits.length ? Colors.teal : Colors.grey.shade300,
+            color: i < _digits.length ? cs.primary : cs.surfaceContainerHighest,
+            border: Border.all(
+              color: i < _digits.length ? cs.primary : cs.outline,
+              width: 1.5,
+            ),
           ),
         )),
       );

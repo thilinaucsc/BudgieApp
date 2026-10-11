@@ -169,7 +169,6 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
               keyboardType: const TextInputType.numberWithOptions(decimal: true),
               decoration: const InputDecoration(
                 labelText: 'Amount',
-                border: OutlineInputBorder(),
               ),
               validator: (v) {
                 final value = double.tryParse((v ?? '').trim());
@@ -205,13 +204,11 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
               controller: _note,
               decoration: const InputDecoration(
                 labelText: 'Note (optional)',
-                border: OutlineInputBorder(),
               ),
             ),
             const SizedBox(height: 24),
             FilledButton(
               onPressed: _save,
-              style: FilledButton.styleFrom(padding: const EdgeInsets.all(16)),
               child: Text(isEdit ? 'Save changes' : 'Save expense'),
             ),
           ],

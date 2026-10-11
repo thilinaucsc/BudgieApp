@@ -68,7 +68,7 @@ class _HouseholdScreenState extends State<HouseholdScreen>
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Household'),
+        title: const Text('Household', style: TextStyle(fontWeight: FontWeight.bold)),
         bottom: TabBar(
           controller: _tabs,
           tabs: [
@@ -80,9 +80,7 @@ class _HouseholdScreenState extends State<HouseholdScreen>
                   const Text('Buy List'),
                   if (lowItems.isNotEmpty) ...[
                     const SizedBox(width: 6),
-                    Badge(
-                      label: Text('${lowItems.length}'),
-                    ),
+                    Badge(label: Text('${lowItems.length}')),
                   ],
                 ],
               ),
@@ -109,11 +107,28 @@ class _HouseholdScreenState extends State<HouseholdScreen>
 
   Widget _itemList(List<HouseholdItem> list) {
     if (list.isEmpty) {
-      return const Center(
-          child: Text('No items yet. Tap + to add household items.'));
+      final cs = Theme.of(context).colorScheme;
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.inventory_2_outlined, size: 72, color: cs.outlineVariant),
+            const SizedBox(height: 16),
+            Text(
+              'No items yet',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500, color: cs.onSurface),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Tap + to add household items',
+              style: TextStyle(color: cs.outline, fontSize: 14),
+            ),
+          ],
+        ),
+      );
     }
     return ListView.builder(
-      padding: const EdgeInsets.only(bottom: 80),
+      padding: const EdgeInsets.only(bottom: 88),
       itemCount: list.length,
       itemBuilder: (_, i) => _itemTile(list[i]),
     );
@@ -121,56 +136,118 @@ class _HouseholdScreenState extends State<HouseholdScreen>
 
   Widget _buyList() {
     if (lowItems.isEmpty) {
-      return const Center(
+      final cs = Theme.of(context).colorScheme;
+      return Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.check_circle_outline, size: 64, color: Colors.green),
-            SizedBox(height: 12),
-            Text('Everything is stocked up!',
-                style: TextStyle(fontSize: 16)),
+            Icon(Icons.check_circle_outline_rounded, size: 72, color: cs.primary),
+            const SizedBox(height: 16),
+            Text(
+              'Everything is stocked up!',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500, color: cs.onSurface),
+            ),
           ],
         ),
       );
     }
     return ListView.builder(
-      padding: const EdgeInsets.only(bottom: 80),
+      padding: const EdgeInsets.only(bottom: 88),
       itemCount: lowItems.length,
       itemBuilder: (_, i) => _itemTile(lowItems[i], highlight: true),
     );
   }
 
   Widget _itemTile(HouseholdItem item, {bool highlight = false}) {
-    final color = item.isLow ? Colors.red : Colors.teal;
+    final cs = Theme.of(context).colorScheme;
+    final iconColor = item.isLow ? cs.error : cs.primary;
+
     return Dismissible(
       key: ValueKey(item.id),
       direction: DismissDirection.endToStart,
-      background: Container(
-        color: Colors.red,
-        alignment: Alignment.centerRight,
-        padding: const EdgeInsets.only(right: 20),
-        child: const Icon(Icons.delete, color: Colors.white),
+      background: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 3),
+        child: Container(
+          decoration: BoxDecoration(
+            color: cs.errorContainer,
+            borderRadius: BorderRadius.circular(16),
+          ),
+          alignment: Alignment.centerRight,
+          padding: const EdgeInsets.only(right: 20),
+          child: Icon(Icons.delete_outline_rounded, color: cs.onErrorContainer),
+        ),
       ),
       confirmDismiss: (_) => _confirmDelete(),
       onDismissed: (_) async {
         await db.deleteItem(item.id!);
         _load();
       },
-      child: ListTile(
-        tileColor: highlight ? Colors.red.withAlpha(15) : null,
-        leading: CircleAvatar(
-          backgroundColor: color.withAlpha(30),
-          child: Icon(Icons.inventory_2_outlined, color: color),
+      child: Card(
+        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 3),
+        color: highlight ? cs.errorContainer.withValues(alpha: 0.35) : null,
+        child: InkWell(
+          onTap: () => _openForm(item),
+          borderRadius: BorderRadius.circular(16),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            child: Row(
+              children: [
+                Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    color: iconColor.withAlpha(30),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(Icons.inventory_2_outlined, color: iconColor, size: 22),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Text(
+                            item.name,
+                            style: const TextStyle(fontWeight: FontWeight.w500, fontSize: 15),
+                          ),
+                          if (item.isLow) ...[
+                            const SizedBox(width: 8),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: cs.error,
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: Text(
+                                'Low',
+                                style: TextStyle(
+                                  color: cs.onError,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                      Text(
+                        'Stock: ${_fmt(item.quantity)} ${item.unit}  ·  Min: ${_fmt(item.minQuantity)} ${item.unit}',
+                        style: TextStyle(color: cs.outline, fontSize: 12),
+                      ),
+                    ],
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.remove_circle_outline),
+                  tooltip: 'Record usage',
+                  onPressed: () => _useItem(item),
+                ),
+              ],
+            ),
+          ),
         ),
-        title: Text(item.name,
-            style: TextStyle(
-                fontWeight:
-                    item.isLow ? FontWeight.bold : FontWeight.normal)),
-        subtitle: Text(
-          'Stock: ${_fmt(item.quantity)} ${item.unit}  •  Min: ${_fmt(item.minQuantity)} ${item.unit}',
-        ),
-        trailing: _itemTileTrailing(item),
-        onTap: () => _openForm(item),
       ),
     );
   }
@@ -182,7 +259,9 @@ class _HouseholdScreenState extends State<HouseholdScreen>
       isScrollControlled: true,
       builder: (ctx) => Padding(
         padding: EdgeInsets.only(
-          left: 24, right: 24, top: 24,
+          left: 24,
+          right: 24,
+          top: 24,
           bottom: MediaQuery.of(ctx).viewInsets.bottom + 24,
         ),
         child: Column(
@@ -196,15 +275,12 @@ class _HouseholdScreenState extends State<HouseholdScreen>
               controller: controller,
               autofocus: true,
               keyboardType: const TextInputType.numberWithOptions(decimal: true),
-              decoration: InputDecoration(
-                suffixText: item.unit,
-                border: const OutlineInputBorder(),
-              ),
+              decoration: InputDecoration(suffixText: item.unit),
             ),
             const SizedBox(height: 16),
             SizedBox(
               width: double.infinity,
-              child: ElevatedButton(
+              child: FilledButton(
                 onPressed: () => Navigator.pop(ctx, true),
                 child: const Text('Use'),
               ),
@@ -220,23 +296,6 @@ class _HouseholdScreenState extends State<HouseholdScreen>
     await db.updateItem(item);
     _load();
   }
-
-  Widget _itemTileTrailing(HouseholdItem item) => Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (item.isLow)
-            const Chip(
-              label: Text('Low', style: TextStyle(color: Colors.white)),
-              backgroundColor: Colors.red,
-              padding: EdgeInsets.zero,
-            ),
-          IconButton(
-            icon: const Icon(Icons.remove_circle_outline),
-            tooltip: 'Record usage',
-            onPressed: () => _useItem(item),
-          ),
-        ],
-      );
 
   String _fmt(double v) =>
       v == v.truncateToDouble() ? v.toInt().toString() : v.toString();
