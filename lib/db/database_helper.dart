@@ -4,6 +4,9 @@ import 'package:path/path.dart';
 import 'package:sqflite/sqflite.dart';
 import '../models/expense.dart';
 import '../models/household_item.dart';
+import '../models/splitter_trip.dart';
+import '../models/splitter_participant.dart';
+import '../models/splitter_expense.dart';
 
 String hashPin(String pin) => sha256.convert(utf8.encode(pin)).toString();
 
@@ -19,7 +22,7 @@ class DatabaseHelper {
     final path = join(await getDatabasesPath(), 'expenses.db');
     return openDatabase(
       path,
-      version: 2,
+      version: 3,
       onCreate: (db, version) async {
         await db.execute('''
           CREATE TABLE expenses(
@@ -47,6 +50,33 @@ class DatabaseHelper {
             min_quantity REAL NOT NULL DEFAULT 1,
             unit TEXT NOT NULL DEFAULT 'pcs'
           )''');
+        await db.execute('''
+          CREATE TABLE splitter_trips(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            created_at TEXT NOT NULL
+          )''');
+        await db.execute('''
+          CREATE TABLE splitter_participants(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            trip_id INTEGER NOT NULL,
+            name TEXT NOT NULL
+          )''');
+        await db.execute('''
+          CREATE TABLE splitter_expenses(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            trip_id INTEGER NOT NULL,
+            payer_id INTEGER NOT NULL,
+            amount REAL NOT NULL,
+            note TEXT NOT NULL DEFAULT '',
+            date TEXT NOT NULL
+          )''');
+        await db.execute('''
+          CREATE TABLE splitter_expense_shares(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            expense_id INTEGER NOT NULL,
+            participant_id INTEGER NOT NULL
+          )''');
       },
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 2) {
@@ -57,6 +87,35 @@ class DatabaseHelper {
               quantity REAL NOT NULL DEFAULT 0,
               min_quantity REAL NOT NULL DEFAULT 1,
               unit TEXT NOT NULL DEFAULT 'pcs'
+            )''');
+        }
+        if (oldVersion < 3) {
+          await db.execute('''
+            CREATE TABLE IF NOT EXISTS splitter_trips(
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              name TEXT NOT NULL,
+              created_at TEXT NOT NULL
+            )''');
+          await db.execute('''
+            CREATE TABLE IF NOT EXISTS splitter_participants(
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              trip_id INTEGER NOT NULL,
+              name TEXT NOT NULL
+            )''');
+          await db.execute('''
+            CREATE TABLE IF NOT EXISTS splitter_expenses(
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              trip_id INTEGER NOT NULL,
+              payer_id INTEGER NOT NULL,
+              amount REAL NOT NULL,
+              note TEXT NOT NULL DEFAULT '',
+              date TEXT NOT NULL
+            )''');
+          await db.execute('''
+            CREATE TABLE IF NOT EXISTS splitter_expense_shares(
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              expense_id INTEGER NOT NULL,
+              participant_id INTEGER NOT NULL
             )''');
         }
       },
@@ -173,5 +232,123 @@ class DatabaseHelper {
     await db.close();
     _db = null;
     await deleteDatabase(path);
+  }
+
+  // ---------- Splitter Trips ----------
+  Future<int> insertSplitterTrip(SplitterTrip trip) async {
+    final db = await database;
+    final map = trip.toMap()..remove('id');
+    return db.insert('splitter_trips', map);
+  }
+
+  Future<List<SplitterTrip>> getAllSplitterTrips() async {
+    final db = await database;
+    final rows =
+        await db.query('splitter_trips', orderBy: 'created_at DESC');
+    return rows.map(SplitterTrip.fromMap).toList();
+  }
+
+  Future<void> deleteSplitterTrip(int id) async {
+    final db = await database;
+    final expenseRows = await db.query(
+      'splitter_expenses',
+      columns: ['id'],
+      where: 'trip_id = ?',
+      whereArgs: [id],
+    );
+    if (expenseRows.isNotEmpty) {
+      final ids = expenseRows.map((r) => r['id']).join(',');
+      await db.rawDelete(
+          'DELETE FROM splitter_expense_shares WHERE expense_id IN ($ids)');
+    }
+    await db.delete('splitter_expenses',
+        where: 'trip_id = ?', whereArgs: [id]);
+    await db.delete('splitter_participants',
+        where: 'trip_id = ?', whereArgs: [id]);
+    await db.delete('splitter_trips', where: 'id = ?', whereArgs: [id]);
+  }
+
+  // ---------- Splitter Participants ----------
+  Future<int> insertSplitterParticipant(SplitterParticipant p) async {
+    final db = await database;
+    final map = p.toMap()..remove('id');
+    return db.insert('splitter_participants', map);
+  }
+
+  Future<List<SplitterParticipant>> participantsForTrip(int tripId) async {
+    final db = await database;
+    final rows = await db.query(
+      'splitter_participants',
+      where: 'trip_id = ?',
+      whereArgs: [tripId],
+      orderBy: 'id ASC',
+    );
+    return rows.map(SplitterParticipant.fromMap).toList();
+  }
+
+  // ---------- Splitter Expenses ----------
+  Future<int> insertSplitterExpense(SplitterExpense e) async {
+    final db = await database;
+    final map = e.toMap()..remove('id');
+    final expenseId = await db.insert('splitter_expenses', map);
+    for (final participantId in e.shareParticipantIds) {
+      await db.insert('splitter_expense_shares', {
+        'expense_id': expenseId,
+        'participant_id': participantId,
+      });
+    }
+    return expenseId;
+  }
+
+  Future<List<SplitterExpense>> expensesForTrip(int tripId) async {
+    final db = await database;
+    final rows = await db.rawQuery(
+      'SELECT e.*, p.name AS payer_name '
+      'FROM splitter_expenses e '
+      'JOIN splitter_participants p ON p.id = e.payer_id '
+      'WHERE e.trip_id = ? '
+      'ORDER BY e.date DESC, e.id DESC',
+      [tripId],
+    );
+    final List<SplitterExpense> result = [];
+    for (final row in rows) {
+      final expense = SplitterExpense.fromMap(row);
+      final shareRows = await db.query(
+        'splitter_expense_shares',
+        columns: ['participant_id'],
+        where: 'expense_id = ?',
+        whereArgs: [expense.id],
+      );
+      final shareIds =
+          shareRows.map((r) => r['participant_id'] as int).toList();
+      result.add(SplitterExpense(
+        id: expense.id,
+        tripId: expense.tripId,
+        payerId: expense.payerId,
+        amount: expense.amount,
+        note: expense.note,
+        date: expense.date,
+        payerName: row['payer_name'] as String,
+        shareParticipantIds: shareIds,
+      ));
+    }
+    return result;
+  }
+
+  Future<void> deleteSplitterExpense(int id) async {
+    final db = await database;
+    await db.delete('splitter_expense_shares',
+        where: 'expense_id = ?', whereArgs: [id]);
+    await db.delete('splitter_expenses', where: 'id = ?', whereArgs: [id]);
+  }
+
+  Future<double> splitterTripTotal(int tripId) async {
+    final db = await database;
+    final rows = await db.rawQuery(
+      'SELECT COALESCE(SUM(amount), 0.0) AS total '
+      'FROM splitter_expenses WHERE trip_id = ?',
+      [tripId],
+    );
+    return (rows.first['total'] as num).toDouble();
   }
 }
