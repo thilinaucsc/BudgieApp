@@ -250,22 +250,24 @@ class DatabaseHelper {
 
   Future<void> deleteSplitterTrip(int id) async {
     final db = await database;
-    final expenseRows = await db.query(
-      'splitter_expenses',
-      columns: ['id'],
-      where: 'trip_id = ?',
-      whereArgs: [id],
-    );
-    if (expenseRows.isNotEmpty) {
-      final ids = expenseRows.map((r) => r['id']).join(',');
-      await db.rawDelete(
-          'DELETE FROM splitter_expense_shares WHERE expense_id IN ($ids)');
-    }
-    await db.delete('splitter_expenses',
-        where: 'trip_id = ?', whereArgs: [id]);
-    await db.delete('splitter_participants',
-        where: 'trip_id = ?', whereArgs: [id]);
-    await db.delete('splitter_trips', where: 'id = ?', whereArgs: [id]);
+    await db.transaction((txn) async {
+      final expenseRows = await txn.query(
+        'splitter_expenses',
+        columns: ['id'],
+        where: 'trip_id = ?',
+        whereArgs: [id],
+      );
+      if (expenseRows.isNotEmpty) {
+        final ids = expenseRows.map((r) => r['id']).join(',');
+        await txn.rawDelete(
+            'DELETE FROM splitter_expense_shares WHERE expense_id IN ($ids)');
+      }
+      await txn.delete('splitter_expenses',
+          where: 'trip_id = ?', whereArgs: [id]);
+      await txn.delete('splitter_participants',
+          where: 'trip_id = ?', whereArgs: [id]);
+      await txn.delete('splitter_trips', where: 'id = ?', whereArgs: [id]);
+    });
   }
 
   // ---------- Splitter Participants ----------
@@ -290,14 +292,16 @@ class DatabaseHelper {
   Future<int> insertSplitterExpense(SplitterExpense e) async {
     final db = await database;
     final map = e.toMap()..remove('id');
-    final expenseId = await db.insert('splitter_expenses', map);
-    for (final participantId in e.shareParticipantIds) {
-      await db.insert('splitter_expense_shares', {
-        'expense_id': expenseId,
-        'participant_id': participantId,
-      });
-    }
-    return expenseId;
+    return db.transaction((txn) async {
+      final expenseId = await txn.insert('splitter_expenses', map);
+      for (final participantId in e.shareParticipantIds) {
+        await txn.insert('splitter_expense_shares', {
+          'expense_id': expenseId,
+          'participant_id': participantId,
+        });
+      }
+      return expenseId;
+    });
   }
 
   Future<List<SplitterExpense>> expensesForTrip(int tripId) async {
