@@ -3,6 +3,7 @@ import 'package:intl/intl.dart';
 import '../db/database_helper.dart';
 import '../models/splitter_trip.dart';
 import '../models/splitter_participant.dart';
+import 'trip_detail_screen.dart';
 
 class TripListScreen extends StatefulWidget {
   const TripListScreen({super.key});
@@ -231,9 +232,7 @@ class _TripListScreenState extends State<TripListScreen> {
       child: Card(
         margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 3),
         child: InkWell(
-          onTap: () {
-            // TODO: navigate to TripDetailScreen(trip: trip, participants: participants)
-          },
+          onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => TripDetailScreen(trip: trip, participants: participants))),
           borderRadius: BorderRadius.circular(16),
           child: Padding(
             padding:
