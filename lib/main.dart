@@ -3,6 +3,7 @@ import 'db/database_helper.dart';
 import 'screens/home_screen.dart';
 import 'screens/household_screen.dart';
 import 'screens/pin_screen.dart';
+import 'screens/trip_list_screen.dart';
 import 'services/backup_service.dart';
 import 'services/premium_service.dart';
 
@@ -154,7 +155,7 @@ class _RootScreenState extends State<RootScreen> with WidgetsBindingObserver {
     return Scaffold(
       body: IndexedStack(
         index: _tab,
-        children: const [HomeScreen(), HouseholdScreen()],
+        children: const [HomeScreen(), HouseholdScreen(), TripListScreen()],
       ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _tab,
@@ -176,6 +177,11 @@ class _RootScreenState extends State<RootScreen> with WidgetsBindingObserver {
                 ? Badge(label: Text('$_lowCount'), child: const Icon(Icons.home))
                 : const Icon(Icons.home),
             label: 'Household',
+          ),
+          const NavigationDestination(
+            icon: Icon(Icons.receipt_long_outlined),
+            selectedIcon: Icon(Icons.receipt_long),
+            label: 'Split',
           ),
         ],
       ),
