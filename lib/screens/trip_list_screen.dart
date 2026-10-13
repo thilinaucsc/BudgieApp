@@ -51,82 +51,129 @@ class _TripListScreenState extends State<TripListScreen> {
   Future<void> _createTrip() async {
     final formKey = GlobalKey<FormState>();
     final nameCtrl = TextEditingController();
-    final participantsCtrl = TextEditingController();
+    final addCtrl = TextEditingController();
+    final participantNames = <String>[];
+    String? namesError;
 
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('New Trip'),
-        content: Form(
-          key: formKey,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextFormField(
-                controller: nameCtrl,
-                decoration: const InputDecoration(labelText: 'Trip name'),
-                validator: (v) =>
-                    (v == null || v.trim().isEmpty) ? 'Required' : null,
-              ),
-              const SizedBox(height: 12),
-              TextFormField(
-                controller: participantsCtrl,
-                decoration: const InputDecoration(
-                  labelText: 'Participants',
-                  hintText: 'Alice, Bob, Charlie',
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx2, setDialogState) {
+          void tryAdd() {
+            final n = addCtrl.text.trim();
+            if (n.isEmpty) return;
+            if (!participantNames.contains(n)) {
+              setDialogState(() {
+                participantNames.add(n);
+                namesError = null;
+              });
+            }
+            addCtrl.clear();
+          }
+
+          return AlertDialog(
+            title: const Text('New Trip'),
+            content: SingleChildScrollView(
+              child: Form(
+                key: formKey,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    TextFormField(
+                      controller: nameCtrl,
+                      decoration:
+                          const InputDecoration(labelText: 'Trip name'),
+                      validator: (v) =>
+                          (v == null || v.trim().isEmpty) ? 'Required' : null,
+                      textInputAction: TextInputAction.next,
+                    ),
+                    const SizedBox(height: 16),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: addCtrl,
+                            decoration: const InputDecoration(
+                              labelText: 'Add participant',
+                              hintText: 'e.g. Alice',
+                            ),
+                            textInputAction: TextInputAction.done,
+                            onSubmitted: (_) => tryAdd(),
+                          ),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.person_add_outlined),
+                          onPressed: tryAdd,
+                          tooltip: 'Add',
+                        ),
+                      ],
+                    ),
+                    if (participantNames.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 6,
+                        runSpacing: 4,
+                        children: participantNames
+                            .map(
+                              (n) => Chip(
+                                label: Text(n),
+                                deleteIcon:
+                                    const Icon(Icons.close, size: 16),
+                                onDeleted: () => setDialogState(
+                                    () => participantNames.remove(n)),
+                              ),
+                            )
+                            .toList(),
+                      ),
+                    ],
+                    if (namesError != null) ...[
+                      const SizedBox(height: 6),
+                      Text(
+                        namesError!,
+                        style: TextStyle(
+                          color: Theme.of(ctx2).colorScheme.error,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
-                validator: (v) {
-                  if (v == null) return 'At least 2 participants required';
-                  final names = v
-                      .split(',')
-                      .map((s) => s.trim())
-                      .where((s) => s.isNotEmpty)
-                      .toList();
-                  if (names.length < 2) {
-                    return 'At least 2 participants required';
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx2, false),
+                child: const Text('Cancel'),
+              ),
+              TextButton(
+                onPressed: () {
+                  if (!formKey.currentState!.validate()) return;
+                  if (participantNames.length < 2) {
+                    setDialogState(
+                        () => namesError = 'Add at least 2 participants');
+                    return;
                   }
-                  return null;
+                  Navigator.pop(ctx2, true);
                 },
+                child: const Text('Create'),
               ),
             ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () {
-              if (formKey.currentState!.validate()) {
-                Navigator.pop(ctx, true);
-              }
-            },
-            child: const Text('Create'),
-          ),
-        ],
+          );
+        },
       ),
     );
 
     if (confirmed != true) return;
 
     final tripId = await db.insertSplitterTrip(
-      SplitterTrip(
-        name: nameCtrl.text.trim(),
-        createdAt: DateTime.now(),
-      ),
+      SplitterTrip(name: nameCtrl.text.trim(), createdAt: DateTime.now()),
     );
-
-    final names = participantsCtrl.text
-        .split(',')
-        .map((s) => s.trim())
-        .where((s) => s.isNotEmpty);
-    for (final name in names) {
+    for (final name in participantNames) {
       await db.insertSplitterParticipant(
         SplitterParticipant(tripId: tripId, name: name),
       );
     }
-
     _load();
   }
 
@@ -205,9 +252,6 @@ class _TripListScreenState extends State<TripListScreen> {
     final id = trip.id!;
     final participants = _participants[id] ?? [];
     final total = _totals[id] ?? 0.0;
-    final participantLabel = participants.isEmpty
-        ? ''
-        : participants.map((p) => p.name).join(' · ');
 
     return Dismissible(
       key: ValueKey(id),
@@ -221,7 +265,8 @@ class _TripListScreenState extends State<TripListScreen> {
           ),
           alignment: Alignment.centerRight,
           padding: const EdgeInsets.only(right: 20),
-          child: Icon(Icons.delete_outline_rounded, color: cs.onErrorContainer),
+          child:
+              Icon(Icons.delete_outline_rounded, color: cs.onErrorContainer),
         ),
       ),
       confirmDismiss: (_) => _confirmDelete(),
@@ -232,40 +277,70 @@ class _TripListScreenState extends State<TripListScreen> {
       child: Card(
         margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 3),
         child: InkWell(
-          onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => TripDetailScreen(trip: trip, participants: participants))),
+          onTap: () => Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => TripDetailScreen(
+                trip: trip,
+                participants: participants,
+              ),
+            ),
+          ),
           borderRadius: BorderRadius.circular(16),
           child: Padding(
             padding:
                 const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+            child: Row(
               children: [
-                Text(
-                  trip.name,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w600,
-                    fontSize: 15,
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        trip.name,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 15,
+                        ),
+                      ),
+                      if (participants.isNotEmpty) ...[
+                        const SizedBox(height: 4),
+                        Text(
+                          participants.map((p) => p.name).join(' · '),
+                          style: TextStyle(color: cs.outline, fontSize: 12),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                      const SizedBox(height: 2),
+                      Text(
+                        DateFormat('d MMM yyyy').format(trip.createdAt),
+                        style: TextStyle(
+                          color: cs.outlineVariant,
+                          fontSize: 11,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-                if (participantLabel.isNotEmpty) ...[
-                  const SizedBox(height: 4),
-                  Text(
-                    participantLabel,
-                    style: TextStyle(color: cs.outline, fontSize: 12),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ],
-                const SizedBox(height: 4),
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: Text(
-                    'Total: $_currency ${money.format(total)}',
-                    style: TextStyle(
-                      color: cs.primary,
-                      fontSize: 13,
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Text(
+                      '$_currency ${money.format(total)}',
+                      style: TextStyle(
+                        color: cs.primary,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 14,
+                      ),
                     ),
-                  ),
+                    const SizedBox(height: 2),
+                    Text(
+                      '${participants.length} '
+                      '${participants.length == 1 ? 'person' : 'people'}',
+                      style: TextStyle(color: cs.outline, fontSize: 11),
+                    ),
+                  ],
                 ),
               ],
             ),

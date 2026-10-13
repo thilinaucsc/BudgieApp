@@ -6,11 +6,13 @@ import '../models/splitter_participant.dart';
 class AddTripExpenseScreen extends StatefulWidget {
   final int tripId;
   final List<SplitterParticipant> participants;
+  final String currency;
 
   const AddTripExpenseScreen({
     super.key,
     required this.tripId,
     required this.participants,
+    this.currency = 'Rs.',
   });
 
   @override
@@ -88,7 +90,10 @@ class _AddTripExpenseScreenState extends State<AddTripExpenseScreen> {
               controller: _amount,
               keyboardType:
                   const TextInputType.numberWithOptions(decimal: true),
-              decoration: const InputDecoration(labelText: 'Amount'),
+              decoration: InputDecoration(
+                labelText: 'Amount',
+                prefixText: '${widget.currency} ',
+              ),
               validator: (v) {
                 final parsed = double.tryParse(v ?? '');
                 if (parsed == null || parsed <= 0) {
@@ -100,7 +105,8 @@ class _AddTripExpenseScreenState extends State<AddTripExpenseScreen> {
             const SizedBox(height: 16),
             TextFormField(
               controller: _note,
-              decoration: const InputDecoration(labelText: 'Note (optional)'),
+              decoration:
+                  const InputDecoration(labelText: 'Note (optional)'),
             ),
             const SizedBox(height: 24),
             Text(
@@ -116,7 +122,9 @@ class _AddTripExpenseScreenState extends State<AddTripExpenseScreen> {
                   label: Text(p.name),
                   selected: _involved.contains(p.id!),
                   onSelected: (v) => setState(
-                    () => v ? _involved.add(p.id!) : _involved.remove(p.id!),
+                    () => v
+                        ? _involved.add(p.id!)
+                        : _involved.remove(p.id!),
                   ),
                 );
               }).toList(),

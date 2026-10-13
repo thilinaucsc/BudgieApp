@@ -63,9 +63,7 @@ class _TripDetailScreenState extends State<TripDetailScreen>
     });
   }
 
-  List<Settlement> _settlements() {
-    return settle(widget.participants, _expenses);
-  }
+  List<Settlement> _settlements() => settle(widget.participants, _expenses);
 
   @override
   Widget build(BuildContext context) {
@@ -83,14 +81,58 @@ class _TripDetailScreenState extends State<TripDetailScreen>
           ],
         ),
       ),
-      body: TabBarView(
-        controller: _tabController,
+      body: Column(
         children: [
-          _expensesTab(),
-          _settlementsTab(),
+          _summaryHeader(),
+          Expanded(
+            child: TabBarView(
+              controller: _tabController,
+              children: [
+                _expensesTab(),
+                _settlementsTab(),
+              ],
+            ),
+          ),
         ],
       ),
       floatingActionButton: _buildFab(),
+    );
+  }
+
+  Widget _summaryHeader() {
+    final cs = Theme.of(context).colorScheme;
+    final total = _expenses.fold<double>(0, (s, e) => s + e.amount);
+    return Container(
+      color: cs.surfaceContainerLow,
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+        children: [
+          _stat(
+            _loading ? '—' : '$_currency ${money.format(total)}',
+            'Total Spent',
+            cs,
+          ),
+          Container(width: 1, height: 28, color: cs.outlineVariant),
+          _stat('${widget.participants.length}', 'People', cs),
+          Container(width: 1, height: 28, color: cs.outlineVariant),
+          _stat(_loading ? '—' : '${_expenses.length}', 'Expenses', cs),
+        ],
+      ),
+    );
+  }
+
+  Widget _stat(String value, String label, ColorScheme cs) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          value,
+          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+        ),
+        const SizedBox(height: 2),
+        Text(label, style: TextStyle(color: cs.outline, fontSize: 11)),
+      ],
     );
   }
 
@@ -187,10 +229,8 @@ class _TripDetailScreenState extends State<TripDetailScreen>
                       const SizedBox(height: 2),
                       Text(
                         e.note,
-                        style: TextStyle(
-                          color: cs.outline,
-                          fontSize: 12,
-                        ),
+                        style:
+                            TextStyle(color: cs.outline, fontSize: 12),
                       ),
                     ],
                     const SizedBox(height: 2),
@@ -239,33 +279,68 @@ class _TripDetailScreenState extends State<TripDetailScreen>
     }
     return RepaintBoundary(
       key: _repaintKey,
-      child: ListView(
-        padding: const EdgeInsets.all(16),
-        children: settlements.map((s) => _settlementRow(s)).toList(),
+      child: Material(
+        color: cs.surface,
+        child: ListView(
+          padding: const EdgeInsets.all(16),
+          children: settlements.map((s) => _settlementCard(s)).toList(),
+        ),
       ),
     );
   }
 
-  Widget _settlementRow(Settlement s) {
+  Widget _settlementCard(Settlement s) {
     final cs = Theme.of(context).colorScheme;
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      child: Row(
-        children: [
-          Text(s.from),
-          const SizedBox(width: 6),
-          Icon(Icons.arrow_forward_rounded, size: 16, color: cs.outline),
-          const SizedBox(width: 6),
-          Text(s.to),
-          const Spacer(),
-          Text(
-            '$_currency ${money.format(s.amount)}',
-            style: TextStyle(
-              fontWeight: FontWeight.bold,
-              color: cs.primary,
+    return Card(
+      margin: const EdgeInsets.symmetric(vertical: 4),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        child: Row(
+          children: [
+            _avatar(s.from, cs),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                s.from,
+                style: const TextStyle(fontWeight: FontWeight.w600),
+              ),
             ),
-          ),
-        ],
+            Icon(Icons.arrow_forward_rounded, size: 16, color: cs.outline),
+            Expanded(
+              child: Text(
+                s.to,
+                textAlign: TextAlign.right,
+                style: const TextStyle(fontWeight: FontWeight.w600),
+              ),
+            ),
+            const SizedBox(width: 8),
+            _avatar(s.to, cs),
+            const SizedBox(width: 12),
+            Text(
+              '$_currency ${money.format(s.amount)}',
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                color: cs.primary,
+                fontSize: 15,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _avatar(String name, ColorScheme cs) {
+    return CircleAvatar(
+      radius: 16,
+      backgroundColor: cs.primaryContainer,
+      child: Text(
+        name.isNotEmpty ? name[0].toUpperCase() : '?',
+        style: TextStyle(
+          color: cs.onPrimaryContainer,
+          fontWeight: FontWeight.bold,
+          fontSize: 13,
+        ),
       ),
     );
   }
@@ -277,12 +352,11 @@ class _TripDetailScreenState extends State<TripDetailScreen>
         builder: (_) => AddTripExpenseScreen(
           tripId: widget.trip.id!,
           participants: widget.participants,
+          currency: _currency,
         ),
       ),
     );
-    if (result == true) {
-      _load();
-    }
+    if (result == true) _load();
   }
 
   Future<bool?> _confirmDelete() => showDialog<bool>(
@@ -339,7 +413,8 @@ class _TripDetailScreenState extends State<TripDetailScreen>
 
   String _buildShareText() {
     final settlements = _settlements();
-    final totalSpent = _expenses.fold<double>(0, (sum, e) => sum + e.amount);
+    final totalSpent =
+        _expenses.fold<double>(0, (sum, e) => sum + e.amount);
     final names = widget.participants.map((p) => p.name).join(', ');
     final buffer = StringBuffer();
     buffer.writeln('Trip: ${widget.trip.name}');
@@ -348,16 +423,18 @@ class _TripDetailScreenState extends State<TripDetailScreen>
     buffer.writeln();
     buffer.writeln('Settlements:');
     for (final s in settlements) {
-      buffer.writeln('• ${s.from} → ${s.to}: $_currency ${money.format(s.amount)}');
+      buffer.writeln(
+          '• ${s.from} → ${s.to}: $_currency ${money.format(s.amount)}');
     }
     return buffer.toString().trimRight();
   }
 
   Future<void> _shareImage() async {
-    final boundary =
-        _repaintKey.currentContext!.findRenderObject() as RenderRepaintBoundary;
+    final boundary = _repaintKey.currentContext!.findRenderObject()
+        as RenderRepaintBoundary;
     final image = await boundary.toImage(pixelRatio: 3.0);
-    final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+    final byteData =
+        await image.toByteData(format: ui.ImageByteFormat.png);
     final bytes = byteData!.buffer.asUint8List();
     final dir = await getTemporaryDirectory();
     final file = File('${dir.path}/budgie_settlement.png');
