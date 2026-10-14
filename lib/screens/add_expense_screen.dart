@@ -25,6 +25,7 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
   late String _category;
   late DateTime _date;
   bool _scanning = false;
+  String _currency = 'Rs.';
 
   bool get isEdit => widget.expense != null;
 
@@ -32,10 +33,18 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
   void initState() {
     super.initState();
     final e = widget.expense;
-    _amount = TextEditingController(text: e == null ? '' : e.amount.toString());
+    _amount =
+        TextEditingController(text: e == null ? '' : e.amount.toString());
     _note = TextEditingController(text: e?.note ?? '');
     _category = e?.category ?? categories.first.name;
     _date = e?.date ?? DateTime.now();
+    _loadCurrency();
+  }
+
+  Future<void> _loadCurrency() async {
+    final c =
+        await DatabaseHelper.instance.getSetting('currency', 'Rs.');
+    if (mounted) setState(() => _currency = c);
   }
 
   @override
@@ -100,21 +109,25 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
     final db = DatabaseHelper.instance;
     final key = await db.getSetting('gemini_api_key', '');
     final result = key.isNotEmpty
-        ? await GeminiService(apiKey: key).extractFromReceipt(File(picked.path))
+        ? await GeminiService(apiKey: key)
+            .extractFromReceipt(File(picked.path))
         : await MlKitService().extractFromReceipt(File(picked.path));
     if (!mounted) return;
     setState(() => _scanning = false);
     if (result == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Could not read bill — try better lighting or a clearer photo.'),
+          content: Text(
+              'Could not read bill — try better lighting or a clearer photo.'),
           duration: Duration(seconds: 4),
         ),
       );
       return;
     }
     setState(() {
-      if (result.amount != null) _amount.text = result.amount!.toStringAsFixed(2);
+      if (result.amount != null) {
+        _amount.text = result.amount!.toStringAsFixed(2);
+      }
       if (result.date != null) _date = result.date!;
       if (result.category != null) _category = result.category!;
       if (result.note != null) _note.text = result.note!;
@@ -141,6 +154,7 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
     return Scaffold(
       appBar: AppBar(
         title: Text(isEdit ? 'Edit expense' : 'Add expense'),
@@ -148,7 +162,10 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
           if (_scanning)
             const Padding(
               padding: EdgeInsets.all(14),
-              child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)),
+              child: SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2)),
             )
           else
             IconButton(
@@ -166,51 +183,135 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
             TextFormField(
               controller: _amount,
               autofocus: !isEdit,
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
-              decoration: const InputDecoration(
+              keyboardType:
+                  const TextInputType.numberWithOptions(decimal: true),
+              decoration: InputDecoration(
                 labelText: 'Amount',
+                prefixText: '$_currency ',
               ),
               validator: (v) {
                 final value = double.tryParse((v ?? '').trim());
-                if (value == null || value <= 0) return 'Enter an amount greater than 0';
+                if (value == null || value <= 0) {
+                  return 'Enter an amount greater than 0';
+                }
                 return null;
               },
             ),
-            const SizedBox(height: 20),
-            const Text('Category', style: TextStyle(fontWeight: FontWeight.w600)),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: categories.map((c) {
-                return ChoiceChip(
-                  showCheckmark: false,
-                  avatar: Icon(c.icon, size: 18, color: c.color),
-                  label: Text(c.name),
-                  selected: _category == c.name,
-                  onSelected: (_) => setState(() => _category = c.name),
-                );
-              }).toList(),
+            const SizedBox(height: 24),
+            Text(
+              'Category',
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: cs.outline,
+              ),
             ),
+            const SizedBox(height: 10),
+            _categoryGrid(cs),
             const SizedBox(height: 20),
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              leading: const Icon(Icons.calendar_today),
-              title: Text(DateFormat('EEEE, d MMMM yyyy').format(_date)),
-              trailing: TextButton(onPressed: _pickDate, child: const Text('Change')),
-            ),
-            const SizedBox(height: 12),
+            _datePicker(cs),
+            const SizedBox(height: 16),
             TextFormField(
               controller: _note,
-              decoration: const InputDecoration(
-                labelText: 'Note (optional)',
-              ),
+              decoration:
+                  const InputDecoration(labelText: 'Note (optional)'),
             ),
             const SizedBox(height: 24),
             FilledButton(
               onPressed: _save,
               child: Text(isEdit ? 'Save changes' : 'Save expense'),
             ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _categoryGrid(ColorScheme cs) {
+    return GridView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 4,
+        childAspectRatio: 1.0,
+        crossAxisSpacing: 8,
+        mainAxisSpacing: 8,
+      ),
+      itemCount: categories.length,
+      itemBuilder: (_, i) {
+        final c = categories[i];
+        final selected = _category == c.name;
+        return GestureDetector(
+          onTap: () => setState(() => _category = c.name),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 150),
+            decoration: BoxDecoration(
+              color: selected
+                  ? c.color.withValues(alpha: 0.15)
+                  : cs.surfaceContainerHighest,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(
+                color: selected ? c.color : Colors.transparent,
+                width: 2,
+              ),
+            ),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(
+                  c.icon,
+                  color: selected ? c.color : cs.onSurfaceVariant,
+                  size: 26,
+                ),
+                const SizedBox(height: 5),
+                Text(
+                  c.name,
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: selected
+                        ? FontWeight.w700
+                        : FontWeight.normal,
+                    color: selected ? c.color : cs.onSurfaceVariant,
+                  ),
+                  textAlign: TextAlign.center,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _datePicker(ColorScheme cs) {
+    final isToday = DateFormat('yyyyMMdd').format(_date) ==
+        DateFormat('yyyyMMdd').format(DateTime.now());
+    return InkWell(
+      onTap: _pickDate,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        padding:
+            const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        decoration: BoxDecoration(
+          color: cs.surfaceContainerHighest,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.calendar_today_outlined,
+                size: 18, color: cs.primary),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                isToday
+                    ? 'Today, ${DateFormat('d MMMM yyyy').format(_date)}'
+                    : DateFormat('EEEE, d MMMM yyyy').format(_date),
+                style: const TextStyle(fontSize: 14),
+              ),
+            ),
+            Icon(Icons.edit_outlined, size: 16, color: cs.outline),
           ],
         ),
       ),

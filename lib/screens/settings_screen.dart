@@ -53,12 +53,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
           _pinSet = pinHash.isNotEmpty;
         }
         if (widget.initialGoogleEmail == null) {
-          _googleEmail = googleAccount.isEmpty ? null : googleAccount;
+          _googleEmail =
+              googleAccount.isEmpty ? null : googleAccount;
         }
       });
-    } catch (_) {
-      // DB unavailable (e.g. in unit tests); initial values remain
-    }
+    } catch (_) {}
   }
 
   @override
@@ -83,9 +82,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       context,
       MaterialPageRoute(builder: (_) => const SetPinScreen()),
     );
-    if (result == true) {
-      await _load();
-    }
+    if (result == true) await _load();
   }
 
   Future<void> _googleTapped() async {
@@ -111,7 +108,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
     if (!mounted) return;
     if (!ok) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Restore failed — no backup found')),
+        const SnackBar(
+            content: Text('Restore failed — no backup found')),
       );
       return;
     }
@@ -136,7 +134,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
       await BackupService.instance.restoreData();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Restored from cloud backup')),
+          const SnackBar(
+              content: Text('Restored from cloud backup')),
         );
       }
     }
@@ -150,116 +149,155 @@ class _SettingsScreenState extends State<SettingsScreen> {
       body: Form(
         key: _formKey,
         child: ListView(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.fromLTRB(16, 20, 16, 40),
           children: [
-            TextFormField(
-              controller: _budget,
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
-              decoration: InputDecoration(
-                labelText: 'Monthly budget from $monthName',
-                helperText:
-                    'This budget also applies to later months until you change it.',
-              ),
-              validator: (v) {
-                final t = (v ?? '').trim();
-                if (t.isEmpty) return null;
-                final value = double.tryParse(t);
-                if (value == null || value <= 0) return 'Enter a number greater than 0';
-                return null;
-              },
+            _sectionCard(
+              'Budget',
+              [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                  child: TextFormField(
+                    controller: _budget,
+                    keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true),
+                    decoration: InputDecoration(
+                      labelText: 'Monthly budget from $monthName',
+                      helperText:
+                          'Applies to later months until you change it.',
+                    ),
+                    validator: (v) {
+                      final t = (v ?? '').trim();
+                      if (t.isEmpty) return null;
+                      final value = double.tryParse(t);
+                      if (value == null || value <= 0) {
+                        return 'Enter a number greater than 0';
+                      }
+                      return null;
+                    },
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                  child: TextFormField(
+                    controller: _currency,
+                    decoration: const InputDecoration(
+                      labelText: 'Currency symbol',
+                      hintText: r'Rs., $, €',
+                    ),
+                    validator: (v) => (v ?? '').trim().isEmpty
+                        ? 'Enter a currency symbol'
+                        : null,
+                  ),
+                ),
+              ],
             ),
-            const SizedBox(height: 20),
-            TextFormField(
-              controller: _currency,
-              decoration: const InputDecoration(
-                labelText: 'Currency symbol',
-                hintText: r'Rs., $, €',
-              ),
-              validator: (v) =>
-                  (v ?? '').trim().isEmpty ? 'Enter a currency symbol' : null,
+            FilledButton(onPressed: _save, child: const Text('Save settings')),
+            const SizedBox(height: 28),
+            _sectionCard(
+              'Security & Backup',
+              [
+                ListTile(
+                  leading: const Icon(Icons.lock_outline),
+                  title: Text(_pinSet ? 'Change PIN' : 'Set PIN'),
+                  trailing: const Icon(Icons.chevron_right, size: 20),
+                  onTap: _setPinTapped,
+                ),
+                const Divider(height: 1, indent: 56),
+                ListTile(
+                  leading: const Icon(Icons.cloud_outlined),
+                  title: Text(_googleEmail != null
+                      ? 'Unlink Google'
+                      : 'Link Google Account'),
+                  subtitle: _googleEmail != null
+                      ? Text(_googleEmail!,
+                          style: const TextStyle(fontSize: 12))
+                      : const Text('Enable cloud backup & PIN recovery'),
+                  trailing: const Icon(Icons.chevron_right, size: 20),
+                  onTap: _googleTapped,
+                ),
+                if (_googleEmail != null) ...[
+                  const Divider(height: 1, indent: 56),
+                  ListTile(
+                    leading: const Icon(Icons.backup_outlined),
+                    title: const Text('Back up now'),
+                    trailing: const Icon(Icons.chevron_right, size: 20),
+                    onTap: _backupNow,
+                  ),
+                  const Divider(height: 1, indent: 56),
+                  ListTile(
+                    leading: const Icon(Icons.restore_outlined),
+                    title: const Text('Restore from cloud'),
+                    trailing: const Icon(Icons.chevron_right, size: 20),
+                    onTap: _restoreFromCloud,
+                  ),
+                ],
+              ],
             ),
-            const SizedBox(height: 24),
-            FilledButton(
-              onPressed: _save,
-              child: const Text('Save settings'),
+            _sectionCard(
+              'Premium',
+              [
+                ListTile(
+                  leading: Icon(Icons.star_outline_rounded,
+                      color: Theme.of(context).colorScheme.primary),
+                  title: const Text('Upgrade to Premium'),
+                  subtitle: const Text('Unlock bill photo scanning'),
+                  trailing: const Icon(Icons.chevron_right, size: 20),
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                        builder: (_) => const PremiumScreen()),
+                  ),
+                ),
+                const Divider(height: 1, indent: 56),
+                ListTile(
+                  leading: const Icon(Icons.restore_page_outlined),
+                  title: const Text('Restore purchase'),
+                  trailing: const Icon(Icons.chevron_right, size: 20),
+                  onTap: () async {
+                    final messenger = ScaffoldMessenger.of(context);
+                    await PremiumService.instance.restore();
+                    if (!mounted) return;
+                    final premium =
+                        await PremiumService.instance.isPremium();
+                    if (!mounted) return;
+                    messenger.showSnackBar(SnackBar(
+                      content: Text(premium
+                          ? 'Premium restored!'
+                          : 'No previous purchase found.'),
+                    ));
+                  },
+                ),
+              ],
             ),
-            const Divider(height: 40),
-
-            // ── PIN ──────────────────────────────────────────────────────────
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              leading: const Icon(Icons.lock_outline),
-              title: Text(_pinSet ? 'Change PIN' : 'Set PIN'),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: _setPinTapped,
-            ),
-
-            const Divider(height: 8),
-
-            // ── Google Account ───────────────────────────────────────────────
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              leading: const Icon(Icons.cloud_outlined),
-              title: Text(_googleEmail != null
-                  ? 'Unlink Google ($_googleEmail)'
-                  : 'Link Google Account'),
-              subtitle: _googleEmail == null
-                  ? const Text('Enable cloud backup & PIN recovery')
-                  : null,
-              trailing: const Icon(Icons.chevron_right),
-              onTap: _googleTapped,
-            ),
-            if (_googleEmail != null) ...[
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                leading: const Icon(Icons.backup_outlined),
-                title: const Text('Back up now'),
-                onTap: _backupNow,
-              ),
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                leading: const Icon(Icons.restore_outlined),
-                title: const Text('Restore from cloud'),
-                onTap: _restoreFromCloud,
-              ),
-            ],
-
-            const Divider(height: 8),
-
-            // ── Premium ──────────────────────────────────────────────────────
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              leading: const Icon(Icons.star_outline_rounded),
-              title: const Text('Upgrade to Premium'),
-              subtitle: const Text('Unlock bill photo scanning'),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: () => Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const PremiumScreen()),
-              ),
-            ),
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              leading: const Icon(Icons.restore_page_outlined),
-              title: const Text('Restore purchase'),
-              onTap: () async {
-                final messenger = ScaffoldMessenger.of(context);
-                await PremiumService.instance.restore();
-                if (!mounted) return;
-                final premium = await PremiumService.instance.isPremium();
-                if (!mounted) return;
-                messenger.showSnackBar(SnackBar(
-                  content: Text(premium
-                      ? 'Premium restored!'
-                      : 'No previous purchase found.'),
-                ));
-              },
-            ),
-
-            const SizedBox(height: 8),
           ],
         ),
       ),
+    );
+  }
+
+  Widget _sectionCard(String title, List<Widget> children) {
+    final cs = Theme.of(context).colorScheme;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(left: 4, bottom: 10),
+          child: Text(
+            title.toUpperCase(),
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              color: cs.primary,
+              letterSpacing: 0.8,
+            ),
+          ),
+        ),
+        Card(
+          margin: EdgeInsets.zero,
+          child: Column(children: children),
+        ),
+        const SizedBox(height: 8),
+      ],
     );
   }
 }

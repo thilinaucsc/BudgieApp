@@ -75,6 +75,11 @@ class ExpenseApp extends StatelessWidget {
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
           side: BorderSide.none,
         ),
+        listTileTheme: const ListTileThemeData(
+          contentPadding: EdgeInsets.symmetric(horizontal: 16),
+          minVerticalPadding: 12,
+        ),
+        dividerTheme: const DividerThemeData(space: 1, thickness: 1),
         navigationBarTheme: const NavigationBarThemeData(
           height: 65,
           elevation: 0,

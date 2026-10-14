@@ -63,8 +63,12 @@ class _HomeScreenState extends State<HomeScreen> {
         builder: (c) => AlertDialog(
           title: const Text('Delete this expense?'),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Cancel')),
-            TextButton(onPressed: () => Navigator.pop(c, true), child: const Text('Delete')),
+            TextButton(
+                onPressed: () => Navigator.pop(c, false),
+                child: const Text('Cancel')),
+            TextButton(
+                onPressed: () => Navigator.pop(c, true),
+                child: const Text('Delete')),
           ],
         ),
       );
@@ -74,7 +78,8 @@ class _HomeScreenState extends State<HomeScreen> {
     final cs = Theme.of(context).colorScheme;
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Budgie', style: TextStyle(fontWeight: FontWeight.bold)),
+        title: const Text('Budgie',
+            style: TextStyle(fontWeight: FontWeight.bold)),
         actions: [
           IconButton(
             icon: const Icon(Icons.pie_chart_outline_rounded),
@@ -82,7 +87,8 @@ class _HomeScreenState extends State<HomeScreen> {
             onPressed: () => Navigator.push(
               context,
               MaterialPageRoute(
-                builder: (_) => ReportsScreen(month: month, currency: currency),
+                builder: (_) =>
+                    ReportsScreen(month: month, currency: currency),
               ),
             ),
           ),
@@ -92,7 +98,8 @@ class _HomeScreenState extends State<HomeScreen> {
             onPressed: () async {
               final changed = await Navigator.push<bool>(
                 context,
-                MaterialPageRoute(builder: (_) => SettingsScreen(month: month)),
+                MaterialPageRoute(
+                    builder: (_) => SettingsScreen(month: month)),
               );
               if (changed == true) _load();
             },
@@ -139,7 +146,8 @@ class _HomeScreenState extends State<HomeScreen> {
                   padding: const EdgeInsets.symmetric(horizontal: 4),
                   child: Text(
                     DateFormat('MMMM yyyy').format(month),
-                    style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+                    style: const TextStyle(
+                        fontSize: 15, fontWeight: FontWeight.w600),
                   ),
                 ),
                 IconButton(
@@ -182,7 +190,8 @@ class _HomeScreenState extends State<HomeScreen> {
         children: [
           Text(
             'Total Spent',
-            style: TextStyle(color: Colors.white.withValues(alpha: 0.75), fontSize: 13),
+            style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.75), fontSize: 13),
           ),
           const SizedBox(height: 4),
           Text(
@@ -213,14 +222,18 @@ class _HomeScreenState extends State<HomeScreen> {
               children: [
                 Text(
                   'Budget: $currency ${money.format(budget!)}',
-                  style: TextStyle(color: Colors.white.withValues(alpha: 0.7), fontSize: 12),
+                  style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.7),
+                      fontSize: 12),
                 ),
                 Text(
                   budget! - spent >= 0
                       ? 'Left: $currency ${money.format(budget! - spent)}'
                       : 'Over: $currency ${money.format(spent - budget!)}',
                   style: TextStyle(
-                    color: spent > budget! ? Colors.red[200]! : Colors.white,
+                    color: spent > budget!
+                        ? Colors.red[200]!
+                        : Colors.white,
                     fontSize: 12,
                     fontWeight: FontWeight.w600,
                   ),
@@ -231,7 +244,9 @@ class _HomeScreenState extends State<HomeScreen> {
             const SizedBox(height: 8),
             Text(
               'Set a budget in Settings to track your limit',
-              style: TextStyle(color: Colors.white.withValues(alpha: 0.65), fontSize: 12),
+              style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.65),
+                  fontSize: 12),
             ),
           ],
         ],
@@ -245,11 +260,15 @@ class _HomeScreenState extends State<HomeScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.receipt_long_outlined, size: 72, color: cs.outlineVariant),
+            Icon(Icons.receipt_long_outlined,
+                size: 72, color: cs.outlineVariant),
             const SizedBox(height: 16),
             Text(
               'No expenses this month',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500, color: cs.onSurface),
+              style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w500,
+                  color: cs.onSurface),
             ),
             const SizedBox(height: 8),
             Text(
@@ -261,86 +280,138 @@ class _HomeScreenState extends State<HomeScreen> {
       );
     }
 
-    return ListView.builder(
+    // Group by calendar day, newest first
+    final byDate = <DateTime, List<Expense>>{};
+    for (final e in expenses) {
+      final d = DateTime(e.date.year, e.date.month, e.date.day);
+      byDate.putIfAbsent(d, () => []).add(e);
+    }
+    final sortedDates = byDate.keys.toList()
+      ..sort((a, b) => b.compareTo(a));
+
+    return ListView(
       padding: const EdgeInsets.only(bottom: 88),
-      itemCount: expenses.length,
-      itemBuilder: (_, i) {
-        final e = expenses[i];
-        final cat = categoryByName(e.category);
-        return Dismissible(
-          key: ValueKey(e.id),
-          direction: DismissDirection.endToStart,
-          background: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 3),
-            child: Container(
-              decoration: BoxDecoration(
-                color: cs.errorContainer,
-                borderRadius: BorderRadius.circular(16),
-              ),
-              alignment: Alignment.centerRight,
-              padding: const EdgeInsets.only(right: 20),
-              child: Icon(Icons.delete_outline_rounded, color: cs.onErrorContainer),
+      children: [
+        for (final date in sortedDates) ...[
+          _dayHeader(date, byDate[date]!, cs),
+          for (final e in byDate[date]!) _expenseItem(e, cs),
+        ],
+      ],
+    );
+  }
+
+  String _dayLabel(DateTime date) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final d = DateTime(date.year, date.month, date.day);
+    if (d == today) return 'Today';
+    if (d == today.subtract(const Duration(days: 1))) return 'Yesterday';
+    return DateFormat('EEEE, d MMM').format(date);
+  }
+
+  Widget _dayHeader(
+      DateTime date, List<Expense> dayExpenses, ColorScheme cs) {
+    final dayTotal = dayExpenses.fold<double>(0, (s, e) => s + e.amount);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 12, 20, 4),
+      child: Row(
+        children: [
+          Text(
+            _dayLabel(date),
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: cs.outline,
             ),
           ),
-          confirmDismiss: (_) => _confirmDelete(),
-          onDismissed: (_) async {
-            setState(() => expenses.removeAt(i));
-            await db.deleteExpense(e.id!);
-            _load();
-          },
-          child: Card(
-            margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 3),
-            child: InkWell(
-              onTap: () => _openForm(e),
-              borderRadius: BorderRadius.circular(16),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                child: Row(
-                  children: [
-                    Container(
-                      width: 44,
-                      height: 44,
-                      decoration: BoxDecoration(
-                        color: cat.color.withAlpha(30),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Icon(cat.icon, color: cat.color, size: 22),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            e.category,
-                            style: const TextStyle(fontWeight: FontWeight.w500, fontSize: 15),
-                          ),
-                          Text(
-                            DateFormat('d MMM').format(e.date) +
-                                (e.note.isEmpty ? '' : '  ·  ${e.note}'),
-                            style: TextStyle(color: cs.outline, fontSize: 12),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Text(
-                      '$currency ${money.format(e.amount)}',
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 15,
-                        color: cs.primary,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
+          const Spacer(),
+          Text(
+            '$currency ${money.format(dayTotal)}',
+            style: TextStyle(fontSize: 12, color: cs.outline),
           ),
-        );
+        ],
+      ),
+    );
+  }
+
+  Widget _expenseItem(Expense e, ColorScheme cs) {
+    final cat = categoryByName(e.category);
+    return Dismissible(
+      key: ValueKey(e.id),
+      direction: DismissDirection.endToStart,
+      background: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 3),
+        child: Container(
+          decoration: BoxDecoration(
+            color: cs.errorContainer,
+            borderRadius: BorderRadius.circular(16),
+          ),
+          alignment: Alignment.centerRight,
+          padding: const EdgeInsets.only(right: 20),
+          child: Icon(Icons.delete_outline_rounded,
+              color: cs.onErrorContainer),
+        ),
+      ),
+      confirmDismiss: (_) => _confirmDelete(),
+      onDismissed: (_) async {
+        setState(() => expenses.removeWhere((x) => x.id == e.id));
+        await db.deleteExpense(e.id!);
+        _load();
       },
+      child: Card(
+        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 3),
+        child: InkWell(
+          onTap: () => _openForm(e),
+          borderRadius: BorderRadius.circular(16),
+          child: Padding(
+            padding:
+                const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            child: Row(
+              children: [
+                Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    color: cat.color.withAlpha(30),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(cat.icon, color: cat.color, size: 22),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        e.category,
+                        style: const TextStyle(
+                            fontWeight: FontWeight.w500, fontSize: 15),
+                      ),
+                      if (e.note.isNotEmpty)
+                        Text(
+                          e.note,
+                          style:
+                              TextStyle(color: cs.outline, fontSize: 12),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  '$currency ${money.format(e.amount)}',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 15,
+                    color: cs.primary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
