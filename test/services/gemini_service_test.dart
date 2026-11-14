@@ -28,4 +28,37 @@ void main() {
     final result = GeminiService.parseJson(json);
     expect(result?.category, isNull);
   });
+
+  test('parseJson strips markdown code fences', () {
+    const raw = '```json\n{"amount":42,"date":"2026-03-04","category":"Food","note":"Lunch"}\n```';
+    final result = GeminiService.parseJson(raw);
+    expect(result?.amount, 42.0);
+    expect(result?.date, DateTime(2026, 3, 4));
+    expect(result?.category, 'Food');
+    expect(result?.note, 'Lunch');
+  });
+
+  test('parseJson returns null when JSON is not an object', () {
+    expect(GeminiService.parseJson('[1,2,3]'), isNull);
+    expect(GeminiService.parseJson(''), isNull);
+  });
+
+  test('parseJson ignores non-numeric amount and bad date', () {
+    const json = '{"amount":"abc","date":"yesterday","category":"Bills","note":5}';
+    final result = GeminiService.parseJson(json);
+    expect(result, isNotNull);
+    expect(result?.amount, isNull);
+    expect(result?.date, isNull);
+    expect(result?.category, 'Bills');
+    expect(result?.note, isNull);
+  });
+
+  test('parseJson accepts every app category', () {
+    for (final c in ['Food', 'Groceries', 'Dining Out', 'Transport', 'Bills',
+        'Shopping', 'Health', 'Entertainment', 'Education', 'Personal Care',
+        'Savings', 'Other']) {
+      final result = GeminiService.parseJson('{"category":"$c"}');
+      expect(result?.category, c, reason: c);
+    }
+  });
 }

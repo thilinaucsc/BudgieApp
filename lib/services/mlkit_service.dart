@@ -73,20 +73,25 @@ class MlKitService {
     return (v != null && v > 0) ? v : null;
   }
 
+  // DateTime rolls invalid days over (31/02 -> 03/03), so reject those.
+  static DateTime? _validDate(int y, int mo, int d) {
+    if (mo < 1 || mo > 12 || d < 1) return null;
+    final dt = DateTime(y, mo, d);
+    return dt.month == mo && dt.day == d ? dt : null;
+  }
+
   static DateTime? _parseDate(RegExpMatch m) {
     try {
       if (m.group(1)!.length == 4) {
         final y = int.parse(m.group(1)!);
         final mo = int.parse(m.group(2)!);
         final d = int.parse(m.group(3)!);
-        if (mo < 1 || mo > 12 || d < 1 || d > 31) return null;
-        return DateTime(y, mo, d);
+        return _validDate(y, mo, d);
       } else {
         final d = int.parse(m.group(1)!);
         final mo = int.parse(m.group(2)!);
         final y = int.parse(m.group(3)!);
-        if (mo < 1 || mo > 12 || d < 1 || d > 31) return null;
-        return DateTime(y, mo, d);
+        return _validDate(y, mo, d);
       }
     } catch (_) {
       return null;

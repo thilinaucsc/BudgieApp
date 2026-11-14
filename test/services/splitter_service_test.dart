@@ -69,4 +69,49 @@ void main() {
     expect(result.length, 2);
     expect(result.every((s) => s.to == 'Alice'), isTrue);
   });
+
+  test('uneven three-way split settles to within a cent', () {
+    final result = settle([alice, bob, charlie], [paid(1, 100, [1, 2, 3])]);
+    expect(result.length, 2);
+    for (final s in result) {
+      expect(s.to, 'Alice');
+      expect((s.amount - 33.33).abs(), lessThan(0.01));
+    }
+  });
+
+  test('payer not included in shares is owed the full amount', () {
+    final result = settle([alice, bob], [paid(1, 80, [2])]);
+    expect(result.length, 1);
+    expect(result.first.from, 'Bob');
+    expect(result.first.to, 'Alice');
+    expect(result.first.amount, 80);
+  });
+
+  test('expense with no share participants is ignored', () {
+    expect(settle([alice, bob], [paid(1, 50, [])]), isEmpty);
+  });
+
+  test('balanced expenses produce no settlements', () {
+    final result = settle([alice, bob], [
+      paid(1, 40, [1, 2]),
+      paid(2, 40, [1, 2]),
+    ]);
+    expect(result, isEmpty);
+  });
+
+  test('settlements conserve money across many expenses', () {
+    final result = settle([alice, bob, charlie], [
+      paid(1, 123.45, [1, 2, 3]),
+      paid(2, 67.89, [2, 3]),
+      paid(3, 10, [1, 3]),
+    ]);
+    // Net: Alice +123.45-41.15-5 = 77.30; Bob +67.89-41.15-33.945 = -7.205;
+    // Charlie +10-41.15-33.945-5 = -70.095
+    final toAlice = result
+        .where((s) => s.to == 'Alice')
+        .fold<double>(0, (a, s) => a + s.amount);
+    expect((toAlice - 77.30).abs(), lessThan(0.02));
+    expect(result.every((s) => s.amount > 0), isTrue);
+    expect(result.every((s) => s.from != s.to), isTrue);
+  });
 }
