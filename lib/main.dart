@@ -6,10 +6,12 @@ import 'screens/pin_screen.dart';
 import 'screens/trip_list_screen.dart';
 import 'services/backup_service.dart';
 import 'services/premium_service.dart';
+import 'services/theme_controller.dart';
 
-void main() {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   PremiumService.instance.initialize();
+  await ThemeController.instance.load();
   runApp(const ExpenseApp());
 }
 
@@ -18,13 +20,25 @@ class ExpenseApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Budgie',
-      debugShowCheckedModeBanner: false,
-      theme: ThemeData(
+    return ValueListenableBuilder<ThemeMode>(
+      valueListenable: ThemeController.instance,
+      builder: (_, mode, _) => MaterialApp(
+        title: 'Budgie',
+        debugShowCheckedModeBanner: false,
+        theme: _buildTheme(Brightness.light),
+        darkTheme: _buildTheme(Brightness.dark),
+        themeMode: mode,
+        home: const _StartupRouter(),
+        routes: {'/home': (_) => const RootScreen()},
+      ),
+    );
+  }
+
+  ThemeData _buildTheme(Brightness brightness) {
+    return ThemeData(
         colorScheme: ColorScheme.fromSeed(
           seedColor: const Color(0xFF00897B),
-          brightness: Brightness.light,
+          brightness: brightness,
         ),
         useMaterial3: true,
         cardTheme: const CardThemeData(
@@ -85,9 +99,6 @@ class ExpenseApp extends StatelessWidget {
           elevation: 0,
           indicatorShape: StadiumBorder(),
         ),
-      ),
-      home: const _StartupRouter(),
-      routes: {'/home': (_) => const RootScreen()},
     );
   }
 }

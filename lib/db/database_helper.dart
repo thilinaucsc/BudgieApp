@@ -3,7 +3,9 @@ import 'package:crypto/crypto.dart';
 import 'package:path/path.dart';
 import 'package:sqflite/sqflite.dart';
 import '../models/expense.dart';
+import '../models/expense_filter.dart';
 import '../models/household_item.dart';
+import '../models/recurring_expense.dart';
 import '../models/splitter_trip.dart';
 import '../models/splitter_participant.dart';
 import '../models/splitter_expense.dart';
@@ -22,7 +24,7 @@ class DatabaseHelper {
     final path = join(await getDatabasesPath(), 'expenses.db');
     return openDatabase(
       path,
-      version: 3,
+      version: 4,
       onCreate: (db, version) async {
         await db.execute('''
           CREATE TABLE expenses(
@@ -77,6 +79,7 @@ class DatabaseHelper {
             expense_id INTEGER NOT NULL,
             participant_id INTEGER NOT NULL
           )''');
+        await _createPlanningTables(db);
       },
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 2) {
@@ -118,8 +121,30 @@ class DatabaseHelper {
               participant_id INTEGER NOT NULL
             )''');
         }
+        if (oldVersion < 4) {
+          await _createPlanningTables(db);
+        }
       },
     );
+  }
+
+  Future<void> _createPlanningTables(Database db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS recurring_expenses(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        amount REAL NOT NULL,
+        category TEXT NOT NULL,
+        note TEXT NOT NULL DEFAULT '',
+        frequency TEXT NOT NULL,
+        start_date TEXT NOT NULL,
+        next_due TEXT NOT NULL,
+        active INTEGER NOT NULL DEFAULT 1
+      )''');
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS category_budgets(
+        category TEXT PRIMARY KEY,
+        limit_amount REAL NOT NULL
+      )''');
   }
 
   // ---------- Expenses ----------
@@ -150,6 +175,108 @@ class DatabaseHelper {
       orderBy: 'date DESC, id DESC',
     );
     return rows.map(Expense.fromMap).toList();
+  }
+
+  Future<List<Expense>> searchExpenses(ExpenseFilter filter) async {
+    final db = await database;
+    final (where, args) = filter.toWhere();
+    final rows = await db.query(
+      'expenses',
+      where: where,
+      whereArgs: args,
+      orderBy: 'date DESC, id DESC',
+    );
+    return rows.map(Expense.fromMap).toList();
+  }
+
+  // ---------- Recurring Expenses ----------
+  Future<List<RecurringExpense>> getRecurringExpenses() async {
+    final db = await database;
+    final rows = await db.query('recurring_expenses',
+        orderBy: 'active DESC, next_due ASC, id ASC');
+    return rows.map(RecurringExpense.fromMap).toList();
+  }
+
+  Future<int> insertRecurringExpense(RecurringExpense r) async {
+    final db = await database;
+    final map = r.toMap()..remove('id');
+    return db.insert('recurring_expenses', map);
+  }
+
+  Future<int> updateRecurringExpense(RecurringExpense r) async {
+    final db = await database;
+    return db.update('recurring_expenses', r.toMap(),
+        where: 'id = ?', whereArgs: [r.id]);
+  }
+
+  Future<int> deleteRecurringExpense(int id) async {
+    final db = await database;
+    return db.delete('recurring_expenses', where: 'id = ?', whereArgs: [id]);
+  }
+
+  /// Adds an expense for every occurrence due by [now] and returns how many
+  /// were added. Runs in one transaction so an occurrence is never added twice.
+  Future<int> postDueRecurringExpenses(DateTime now) async {
+    final db = await database;
+    final today = DateTime(now.year, now.month, now.day);
+    return db.transaction((txn) async {
+      final rows = await txn.query(
+        'recurring_expenses',
+        where: 'active = 1 AND next_due <= ?',
+        whereArgs: [today.toIso8601String()],
+      );
+      var posted = 0;
+      for (final row in rows) {
+        final recurring = RecurringExpense.fromMap(row);
+        final due = recurring.dueDates(now);
+        if (due.isEmpty) continue;
+        for (final date in due) {
+          final expense = Expense(
+            amount: recurring.amount,
+            category: recurring.category,
+            date: date,
+            note: recurring.note,
+          );
+          await txn.insert('expenses', expense.toMap()..remove('id'));
+          posted++;
+        }
+        await txn.update(
+          'recurring_expenses',
+          {
+            'next_due':
+                recurring.occurrenceAfter(due.last).toIso8601String(),
+          },
+          where: 'id = ?',
+          whereArgs: [recurring.id],
+        );
+      }
+      return posted;
+    });
+  }
+
+  // ---------- Category Budgets ----------
+  Future<Map<String, double>> getCategoryBudgets() async {
+    final db = await database;
+    final rows = await db.query('category_budgets');
+    return {
+      for (final r in rows)
+        r['category'] as String: (r['limit_amount'] as num).toDouble(),
+    };
+  }
+
+  Future<void> setCategoryBudget(String category, double amount) async {
+    final db = await database;
+    await db.insert(
+      'category_budgets',
+      {'category': category, 'limit_amount': amount},
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  Future<void> deleteCategoryBudget(String category) async {
+    final db = await database;
+    await db.delete('category_budgets',
+        where: 'category = ?', whereArgs: [category]);
   }
 
   // ---------- Budgets ----------

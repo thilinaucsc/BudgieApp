@@ -1,9 +1,14 @@
+import 'dart:convert';
+import 'dart:io';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
 import '../db/database_helper.dart';
 import '../models/expense.dart';
 import '../models/expense_category.dart';
+import '../services/csv_export.dart';
 
 class ReportsScreen extends StatefulWidget {
   final DateTime month;
@@ -36,6 +41,29 @@ class _ReportsScreenState extends State<ReportsScreen> {
     _load();
   }
 
+  Future<void> _exportCsv(BuildContext buttonContext) async {
+    // iPad anchors the share sheet to the button that opened it.
+    final box = buttonContext.findRenderObject() as RenderBox?;
+    final origin =
+        box == null ? null : box.localToGlobal(Offset.zero) & box.size;
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final dir = await getTemporaryDirectory();
+      final name = 'budgie-expenses-${DateFormat('yyyy-MM').format(month)}.csv';
+      final file = File('${dir.path}/$name');
+      await file.writeAsBytes(utf8.encode(expensesToCsv(expenses)));
+      await Share.shareXFiles(
+        [XFile(file.path, mimeType: 'text/csv')],
+        sharePositionOrigin: origin,
+      );
+    } catch (e) {
+      debugPrint('ReportsScreen._exportCsv: $e');
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Could not export expenses')),
+      );
+    }
+  }
+
   double get total => expenses.fold(0.0, (sum, e) => sum + e.amount);
 
   Map<String, double> get byCategory {
@@ -58,7 +86,19 @@ class _ReportsScreenState extends State<ReportsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Reports')),
+      appBar: AppBar(
+        title: const Text('Reports'),
+        actions: [
+          Builder(
+            builder: (buttonContext) => IconButton(
+              icon: const Icon(Icons.ios_share_rounded),
+              tooltip: 'Export CSV',
+              onPressed:
+                  expenses.isEmpty ? null : () => _exportCsv(buttonContext),
+            ),
+          ),
+        ],
+      ),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [

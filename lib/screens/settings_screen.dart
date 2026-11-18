@@ -3,7 +3,10 @@ import 'package:intl/intl.dart';
 import '../db/database_helper.dart';
 import '../services/backup_service.dart';
 import '../services/premium_service.dart';
+import '../services/theme_controller.dart';
+import 'category_budgets_screen.dart';
 import 'premium_screen.dart';
+import 'recurring_screen.dart';
 import 'set_pin_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -130,8 +133,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
       ),
     );
     if (confirmed == true) {
-      await db.wipeAll();
       await BackupService.instance.restoreData();
+      await ThemeController.instance.load();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -231,6 +234,73 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     onTap: _restoreFromCloud,
                   ),
                 ],
+              ],
+            ),
+            _sectionCard(
+              'Planning',
+              [
+                ListTile(
+                  leading: const Icon(Icons.event_repeat_outlined),
+                  title: const Text('Recurring expenses'),
+                  subtitle: const Text('Rent, bills and subscriptions'),
+                  trailing: const Icon(Icons.chevron_right, size: 20),
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                        builder: (_) => const RecurringScreen()),
+                  ),
+                ),
+                const Divider(height: 1, indent: 56),
+                ListTile(
+                  leading: const Icon(Icons.donut_small_outlined),
+                  title: const Text('Category budgets'),
+                  subtitle: const Text('Monthly limits for each category'),
+                  trailing: const Icon(Icons.chevron_right, size: 20),
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) =>
+                          CategoryBudgetsScreen(month: widget.month),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            _sectionCard(
+              'Appearance',
+              [
+                Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: ValueListenableBuilder<ThemeMode>(
+                    valueListenable: ThemeController.instance,
+                    builder: (_, mode, _) => SizedBox(
+                      width: double.infinity,
+                      child: SegmentedButton<ThemeMode>(
+                        showSelectedIcon: false,
+                        segments: const [
+                          ButtonSegment(
+                            value: ThemeMode.system,
+                            label: Text('System'),
+                            icon: Icon(Icons.brightness_auto_outlined),
+                          ),
+                          ButtonSegment(
+                            value: ThemeMode.light,
+                            label: Text('Light'),
+                            icon: Icon(Icons.light_mode_outlined),
+                          ),
+                          ButtonSegment(
+                            value: ThemeMode.dark,
+                            label: Text('Dark'),
+                            icon: Icon(Icons.dark_mode_outlined),
+                          ),
+                        ],
+                        selected: {mode},
+                        onSelectionChanged: (s) =>
+                            ThemeController.instance.setMode(s.first),
+                      ),
+                    ),
+                  ),
+                ),
               ],
             ),
             _sectionCard(

@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../db/database_helper.dart';
+import '../models/category_budget.dart';
 import '../models/expense.dart';
 import '../models/expense_category.dart';
 import 'add_expense_screen.dart';
+import 'category_budgets_screen.dart';
 import 'reports_screen.dart';
+import 'search_screen.dart';
 import 'settings_screen.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -14,33 +17,59 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
+class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   final db = DatabaseHelper.instance;
   final money = NumberFormat('#,##0.00');
 
   DateTime month = DateTime(DateTime.now().year, DateTime.now().month);
   List<Expense> expenses = [];
   double? budget;
+  List<CategoryBudgetStatus> categoryAlerts = [];
   String currency = 'Rs.';
   bool loading = true;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _load();
   }
 
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Recurring expenses may have fallen due while the app was closed.
+    if (state == AppLifecycleState.resumed) _load();
+  }
+
   Future<void> _load() async {
+    final posted = await db.postDueRecurringExpenses(DateTime.now());
     final e = await db.expensesForMonth(month);
     final b = await db.getBudget(month);
+    final limits = await db.getCategoryBudgets();
     final c = await db.getSetting('currency', 'Rs.');
     if (!mounted) return;
     setState(() {
       expenses = e;
       budget = b;
+      categoryAlerts = CategoryBudgetStatus.summarize(limits, e)
+          .where((s) => s.isOver || s.isNear)
+          .toList();
       currency = c;
       loading = false;
     });
+    if (posted > 0) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(posted == 1
+            ? 'Added 1 recurring expense'
+            : 'Added $posted recurring expenses'),
+      ));
+    }
   }
 
   double get total => expenses.fold(0.0, (sum, e) => sum + e.amount);
@@ -82,6 +111,18 @@ class _HomeScreenState extends State<HomeScreen> {
             style: TextStyle(fontWeight: FontWeight.bold)),
         actions: [
           IconButton(
+            icon: const Icon(Icons.search_rounded),
+            tooltip: 'Search',
+            onPressed: () async {
+              await Navigator.push(
+                context,
+                MaterialPageRoute(
+                    builder: (_) => SearchScreen(currency: currency)),
+              );
+              _load();
+            },
+          ),
+          IconButton(
             icon: const Icon(Icons.pie_chart_outline_rounded),
             tooltip: 'Reports',
             onPressed: () => Navigator.push(
@@ -96,12 +137,12 @@ class _HomeScreenState extends State<HomeScreen> {
             icon: const Icon(Icons.settings_outlined),
             tooltip: 'Settings',
             onPressed: () async {
-              final changed = await Navigator.push<bool>(
+              await Navigator.push<bool>(
                 context,
                 MaterialPageRoute(
                     builder: (_) => SettingsScreen(month: month)),
               );
-              if (changed == true) _load();
+              _load();
             },
           ),
         ],
@@ -117,6 +158,7 @@ class _HomeScreenState extends State<HomeScreen> {
               children: [
                 _monthBar(cs),
                 _budgetCard(cs),
+                if (categoryAlerts.isNotEmpty) _categoryAlert(cs),
                 Expanded(child: _expenseList(cs)),
               ],
             ),
@@ -250,6 +292,57 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ],
         ],
+      ),
+    );
+  }
+
+  Widget _categoryAlert(ColorScheme cs) {
+    final first = categoryAlerts.first;
+    final others = categoryAlerts.length - 1;
+    final state = first.isOver ? 'is over budget' : 'is close to its budget';
+    final background = first.isOver ? cs.errorContainer : cs.tertiaryContainer;
+    final foreground =
+        first.isOver ? cs.onErrorContainer : cs.onTertiaryContainer;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+      child: Material(
+        color: background,
+        borderRadius: BorderRadius.circular(12),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: () async {
+            await Navigator.push(
+              context,
+              MaterialPageRoute(
+                  builder: (_) => CategoryBudgetsScreen(month: month)),
+            );
+            _load();
+          },
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            child: Row(
+              children: [
+                Icon(Icons.warning_amber_rounded, size: 20, color: foreground),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    others > 0
+                        ? '${first.category} $state, +$others more'
+                        : '${first.category} $state',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: foreground,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+                Icon(Icons.chevron_right, size: 20, color: foreground),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }

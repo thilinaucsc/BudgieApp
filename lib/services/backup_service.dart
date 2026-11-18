@@ -114,28 +114,26 @@ class BackupService {
     }
   }
 
+  /// Replaces local data with the downloaded backup. Runs in one transaction,
+  /// so a failed restore leaves the existing data untouched.
   Future<void> restoreData() async {
     final data = _pendingRestore;
     if (data == null) return;
-    final db = DatabaseHelper.instance;
-    final raw = await db.database;
+    final raw = await DatabaseHelper.instance.database;
 
-    for (final row in (data['expenses'] as List? ?? [])) {
-      await raw.insert('expenses', Map<String, dynamic>.from(row as Map),
-          conflictAlgorithm: ConflictAlgorithm.replace);
-    }
-    for (final row in (data['budgets'] as List? ?? [])) {
-      await raw.insert('budgets', Map<String, dynamic>.from(row as Map),
-          conflictAlgorithm: ConflictAlgorithm.replace);
-    }
-    for (final row in (data['household_items'] as List? ?? [])) {
-      await raw.insert('household_items', Map<String, dynamic>.from(row as Map),
-          conflictAlgorithm: ConflictAlgorithm.replace);
-    }
-    for (final row in (data['settings'] as List? ?? [])) {
-      await raw.insert('settings', Map<String, dynamic>.from(row as Map),
-          conflictAlgorithm: ConflictAlgorithm.replace);
-    }
+    await raw.transaction((txn) async {
+      for (final table in _tables) {
+        // Older backups have no trips, so keep the ones on this phone.
+        if (_splitterTables.contains(table) && !data.containsKey(table)) {
+          continue;
+        }
+        await txn.delete(table);
+        for (final row in (data[table] as List? ?? [])) {
+          await txn.insert(table, Map<String, dynamic>.from(row as Map),
+              conflictAlgorithm: ConflictAlgorithm.replace);
+        }
+      }
+    });
     // Only clear pending data after all inserts succeed; if an insert throws,
     // the caller can retry by calling restoreData() again.
     _pendingRestore = null;
@@ -143,22 +141,41 @@ class BackupService {
 
   // ── Serialise ─────────────────────────────────────────────────────────────
 
+  static const _splitterTables = {
+    'splitter_trips',
+    'splitter_participants',
+    'splitter_expenses',
+    'splitter_expense_shares',
+  };
+
+  static const _tables = [
+    'expenses',
+    'budgets',
+    'household_items',
+    'recurring_expenses',
+    'category_budgets',
+    ..._splitterTables,
+    'settings',
+  ];
+
   Future<String> _serialize() async {
-    final db = DatabaseHelper.instance;
-    final raw = await db.database;
-    final expenses = await raw.query('expenses');
-    final budgets = await raw.query('budgets');
-    final items = await raw.query('household_items');
-    final settings = (await raw.query('settings'))
-        .where((r) => r['key'] != 'pin_hash')
-        .toList();
-    return jsonEncode({
-      'expenses': expenses,
-      'budgets': budgets,
-      'household_items': items,
-      'settings': settings,
-    });
+    final raw = await DatabaseHelper.instance.database;
+    final backup = <String, List<Map<String, Object?>>>{};
+    for (final table in _tables) {
+      final rows = await raw.query(table);
+      backup[table] = table == 'settings'
+          ? rows.where((r) => r['key'] != 'pin_hash').toList()
+          : rows;
+    }
+    return jsonEncode(backup);
   }
+
+  @visibleForTesting
+  Future<String> serializeForTest() => _serialize();
+
+  @visibleForTesting
+  void setPendingRestoreForTest(String json) =>
+      _pendingRestore = jsonDecode(json) as Map<String, dynamic>;
 }
 
 class _AuthClient extends http.BaseClient {

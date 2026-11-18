@@ -76,7 +76,6 @@ class _PinScreenState extends State<PinScreen>
       final restored = await BackupService.instance.restore();
       if (!mounted) return;
       if (restored) {
-        await db.wipeAll();
         await BackupService.instance.restoreData();
       } else {
         final proceed = await showDialog<bool>(
