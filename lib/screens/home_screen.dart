@@ -4,9 +4,13 @@ import '../db/database_helper.dart';
 import '../models/category_budget.dart';
 import '../models/expense.dart';
 import '../models/expense_category.dart';
+import '../models/income.dart';
+import '../services/reminder_service.dart';
 import 'add_expense_screen.dart';
 import 'category_budgets_screen.dart';
+import 'income_screen.dart';
 import 'reports_screen.dart';
+import 'savings_goals_screen.dart';
 import 'search_screen.dart';
 import 'settings_screen.dart';
 
@@ -25,6 +29,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   List<Expense> expenses = [];
   double? budget;
   List<CategoryBudgetStatus> categoryAlerts = [];
+  MonthlyBalance balance =
+      const MonthlyBalance(income: 0, spent: 0, saved: 0);
   String currency = 'Rs.';
   bool loading = true;
 
@@ -52,11 +58,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     final e = await db.expensesForMonth(month);
     final b = await db.getBudget(month);
     final limits = await db.getCategoryBudgets();
+    final m = await db.monthlyBalance(month);
     final c = await db.getSetting('currency', 'Rs.');
     if (!mounted) return;
     setState(() {
       expenses = e;
       budget = b;
+      balance = m;
       categoryAlerts = CategoryBudgetStatus.summarize(limits, e)
           .where((s) => s.isOver || s.isNear)
           .toList();
@@ -70,6 +78,15 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             : 'Added $posted recurring expenses'),
       ));
     }
+    await ReminderService.instance.sync();
+  }
+
+  Future<void> _openAndReload(Widget screen) async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => screen),
+    );
+    _load();
   }
 
   double get total => expenses.fold(0.0, (sum, e) => sum + e.amount);
@@ -158,6 +175,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               children: [
                 _monthBar(cs),
                 _budgetCard(cs),
+                _balanceCard(cs),
                 if (categoryAlerts.isNotEmpty) _categoryAlert(cs),
                 Expanded(child: _expenseList(cs)),
               ],
@@ -292,6 +310,60 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             ),
           ],
         ],
+      ),
+    );
+  }
+
+  Widget _balanceCard(ColorScheme cs) {
+    final incomeScreen = IncomeScreen(month: month);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+      child: Card(
+        margin: EdgeInsets.zero,
+        child: Row(
+          children: [
+            _balanceCell('Income', balance.income, cs.primary,
+                () => _openAndReload(incomeScreen)),
+            _balanceCell('Saved', balance.saved, cs.onSurface,
+                () => _openAndReload(const SavingsGoalsScreen())),
+            _balanceCell('Left', balance.left,
+                balance.left < 0 ? cs.error : cs.onSurface,
+                () => _openAndReload(incomeScreen)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _balanceCell(
+      String label, double value, Color color, VoidCallback onTap) {
+    final sign = value < 0 ? '-' : '';
+    return Expanded(
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+          child: Column(
+            children: [
+              Text(label,
+                  style: TextStyle(
+                      fontSize: 12,
+                      color: Theme.of(context).colorScheme.outline)),
+              const SizedBox(height: 2),
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(
+                  '$sign$currency ${money.format(value.abs())}',
+                  style: TextStyle(
+                    color: color,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

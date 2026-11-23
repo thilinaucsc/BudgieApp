@@ -4,9 +4,13 @@ import '../db/database_helper.dart';
 import '../services/backup_service.dart';
 import '../services/premium_service.dart';
 import '../services/theme_controller.dart';
+import 'categories_screen.dart';
 import 'category_budgets_screen.dart';
+import 'income_screen.dart';
 import 'premium_screen.dart';
 import 'recurring_screen.dart';
+import 'reminders_screen.dart';
+import 'savings_goals_screen.dart';
 import 'set_pin_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -240,6 +244,31 @@ class _SettingsScreenState extends State<SettingsScreen> {
               'Planning',
               [
                 ListTile(
+                  leading: const Icon(Icons.payments_outlined),
+                  title: const Text('Income'),
+                  subtitle: const Text('Salary and money you receive'),
+                  trailing: const Icon(Icons.chevron_right, size: 20),
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => IncomeScreen(month: widget.month),
+                    ),
+                  ),
+                ),
+                const Divider(height: 1, indent: 56),
+                ListTile(
+                  leading: const Icon(Icons.savings_outlined),
+                  title: const Text('Savings goals'),
+                  subtitle: const Text('Save towards a target'),
+                  trailing: const Icon(Icons.chevron_right, size: 20),
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                        builder: (_) => const SavingsGoalsScreen()),
+                  ),
+                ),
+                const Divider(height: 1, indent: 56),
+                ListTile(
                   leading: const Icon(Icons.event_repeat_outlined),
                   title: const Text('Recurring expenses'),
                   subtitle: const Text('Rent, bills and subscriptions'),
@@ -262,6 +291,30 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       builder: (_) =>
                           CategoryBudgetsScreen(month: widget.month),
                     ),
+                  ),
+                ),
+                const Divider(height: 1, indent: 56),
+                ListTile(
+                  leading: const Icon(Icons.category_outlined),
+                  title: const Text('Categories'),
+                  subtitle: const Text('Create your own categories'),
+                  trailing: const Icon(Icons.chevron_right, size: 20),
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                        builder: (_) => const CategoriesScreen()),
+                  ),
+                ),
+                const Divider(height: 1, indent: 56),
+                ListTile(
+                  leading: const Icon(Icons.notifications_outlined),
+                  title: const Text('Reminders'),
+                  subtitle: const Text('Bill and daily notifications'),
+                  trailing: const Icon(Icons.chevron_right, size: 20),
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                        builder: (_) => const RemindersScreen()),
                   ),
                 ),
               ],

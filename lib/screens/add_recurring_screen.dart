@@ -32,7 +32,7 @@ class _AddRecurringScreenState extends State<AddRecurringScreen> {
     _amount =
         TextEditingController(text: r == null ? '' : r.amount.toString());
     _note = TextEditingController(text: r?.note ?? '');
-    _category = r?.category ?? categories.first.name;
+    _category = categoryByName(r?.category ?? categories.first.name).name;
     _frequency = r?.frequency ?? RecurringFrequency.monthly;
     _initialDue = r?.upcomingDue(now) ?? DateTime(now.year, now.month, now.day);
     _nextDue = _initialDue;

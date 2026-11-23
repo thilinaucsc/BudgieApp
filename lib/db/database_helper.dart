@@ -2,10 +2,14 @@ import 'dart:convert';
 import 'package:crypto/crypto.dart';
 import 'package:path/path.dart';
 import 'package:sqflite/sqflite.dart';
+import '../models/custom_category.dart';
 import '../models/expense.dart';
+import '../models/expense_category.dart';
 import '../models/expense_filter.dart';
 import '../models/household_item.dart';
+import '../models/income.dart';
 import '../models/recurring_expense.dart';
+import '../models/savings_goal.dart';
 import '../models/splitter_trip.dart';
 import '../models/splitter_participant.dart';
 import '../models/splitter_expense.dart';
@@ -24,7 +28,7 @@ class DatabaseHelper {
     final path = join(await getDatabasesPath(), 'expenses.db');
     return openDatabase(
       path,
-      version: 4,
+      version: 5,
       onCreate: (db, version) async {
         await db.execute('''
           CREATE TABLE expenses(
@@ -80,6 +84,7 @@ class DatabaseHelper {
             participant_id INTEGER NOT NULL
           )''');
         await _createPlanningTables(db);
+        await _createMoneyTables(db);
       },
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 2) {
@@ -124,8 +129,44 @@ class DatabaseHelper {
         if (oldVersion < 4) {
           await _createPlanningTables(db);
         }
+        if (oldVersion < 5) {
+          await _createMoneyTables(db);
+        }
       },
     );
+  }
+
+  Future<void> _createMoneyTables(Database db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS income(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        amount REAL NOT NULL,
+        source TEXT NOT NULL,
+        date TEXT NOT NULL,
+        note TEXT NOT NULL DEFAULT ''
+      )''');
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS savings_goals(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        target_amount REAL NOT NULL,
+        target_date TEXT,
+        created_at TEXT NOT NULL
+      )''');
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS savings_contributions(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        goal_id INTEGER NOT NULL,
+        amount REAL NOT NULL,
+        date TEXT NOT NULL
+      )''');
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS custom_categories(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL UNIQUE,
+        icon_key TEXT NOT NULL,
+        color INTEGER NOT NULL
+      )''');
   }
 
   Future<void> _createPlanningTables(Database db) async {
@@ -279,6 +320,190 @@ class DatabaseHelper {
         where: 'category = ?', whereArgs: [category]);
   }
 
+  // ---------- Custom Categories ----------
+  Future<List<CustomCategory>> getCustomCategories() async {
+    final db = await database;
+    final rows = await db.query('custom_categories',
+        orderBy: 'name COLLATE NOCASE ASC');
+    return rows.map(CustomCategory.fromMap).toList();
+  }
+
+  /// Makes the saved custom categories available through [categories].
+  Future<void> loadCustomCategories() async {
+    final custom = await getCustomCategories();
+    setCustomCategories(custom.map((c) => c.toCategory()).toList());
+  }
+
+  Future<int> insertCustomCategory(CustomCategory c) async {
+    final db = await database;
+    final id = await db.insert('custom_categories', c.toMap()..remove('id'));
+    await loadCustomCategories();
+    return id;
+  }
+
+  /// Saves [c] and moves everything filed under [oldName] to its new name.
+  Future<void> updateCustomCategory(CustomCategory c, String oldName) async {
+    final db = await database;
+    await db.transaction((txn) async {
+      await txn.update('custom_categories', c.toMap(),
+          where: 'id = ?', whereArgs: [c.id]);
+      for (final table in const [
+        'expenses',
+        'recurring_expenses',
+        'category_budgets',
+      ]) {
+        await txn.update(table, {'category': c.name},
+            where: 'category = ?', whereArgs: [oldName]);
+      }
+    });
+    await loadCustomCategories();
+  }
+
+  /// Deletes [c], moving its expenses to Other so no spending is lost.
+  Future<void> deleteCustomCategory(CustomCategory c) async {
+    final db = await database;
+    await db.transaction((txn) async {
+      for (final table in const ['expenses', 'recurring_expenses']) {
+        await txn.update(table, {'category': fallbackCategoryName},
+            where: 'category = ?', whereArgs: [c.name]);
+      }
+      await txn.delete('category_budgets',
+          where: 'category = ?', whereArgs: [c.name]);
+      await txn.delete('custom_categories',
+          where: 'id = ?', whereArgs: [c.id]);
+    });
+    await loadCustomCategories();
+  }
+
+  // ---------- Income ----------
+  Future<List<Income>> incomeForMonth(DateTime month) async {
+    final db = await database;
+    final start = DateTime(month.year, month.month, 1);
+    final end = DateTime(month.year, month.month + 1, 1);
+    final rows = await db.query(
+      'income',
+      where: 'date >= ? AND date < ?',
+      whereArgs: [start.toIso8601String(), end.toIso8601String()],
+      orderBy: 'date DESC, id DESC',
+    );
+    return rows.map(Income.fromMap).toList();
+  }
+
+  Future<int> insertIncome(Income income) async {
+    final db = await database;
+    return db.insert('income', income.toMap()..remove('id'));
+  }
+
+  Future<int> updateIncome(Income income) async {
+    final db = await database;
+    return db.update('income', income.toMap(),
+        where: 'id = ?', whereArgs: [income.id]);
+  }
+
+  Future<int> deleteIncome(int id) async {
+    final db = await database;
+    return db.delete('income', where: 'id = ?', whereArgs: [id]);
+  }
+
+  Future<MonthlyBalance> monthlyBalance(DateTime month) async {
+    final db = await database;
+    final start = DateTime(month.year, month.month, 1).toIso8601String();
+    final end = DateTime(month.year, month.month + 1, 1).toIso8601String();
+    Future<double> sum(String table) async {
+      final rows = await db.rawQuery(
+        'SELECT COALESCE(SUM(amount), 0.0) AS total FROM $table '
+        'WHERE date >= ? AND date < ?',
+        [start, end],
+      );
+      return (rows.first['total'] as num).toDouble();
+    }
+
+    return MonthlyBalance(
+      income: await sum('income'),
+      spent: await sum('expenses'),
+      saved: await sum('savings_contributions'),
+    );
+  }
+
+  // ---------- Savings Goals ----------
+  Future<List<SavingsGoal>> getSavingsGoals() async {
+    final db = await database;
+    final rows = await db.rawQuery(
+      'SELECT g.*, COALESCE(SUM(c.amount), 0.0) AS saved, '
+      'MIN(c.date) AS first_contribution '
+      'FROM savings_goals g '
+      'LEFT JOIN savings_contributions c ON c.goal_id = g.id '
+      'GROUP BY g.id '
+      'ORDER BY g.created_at DESC, g.id DESC',
+    );
+    return rows.map(SavingsGoal.fromMap).toList();
+  }
+
+  Future<int> insertSavingsGoal(SavingsGoal goal) async {
+    final db = await database;
+    return db.insert('savings_goals', goal.toMap()..remove('id'));
+  }
+
+  Future<int> updateSavingsGoal(SavingsGoal goal) async {
+    final db = await database;
+    return db.update('savings_goals', goal.toMap(),
+        where: 'id = ?', whereArgs: [goal.id]);
+  }
+
+  Future<void> deleteSavingsGoal(int id) async {
+    final db = await database;
+    await db.transaction((txn) async {
+      await txn.delete('savings_contributions',
+          where: 'goal_id = ?', whereArgs: [id]);
+      await txn.delete('savings_goals', where: 'id = ?', whereArgs: [id]);
+    });
+  }
+
+  Future<List<SavingsContribution>> contributionsForGoal(int goalId) async {
+    final db = await database;
+    final rows = await db.query(
+      'savings_contributions',
+      where: 'goal_id = ?',
+      whereArgs: [goalId],
+      orderBy: 'date DESC, id DESC',
+    );
+    return rows.map(SavingsContribution.fromMap).toList();
+  }
+
+  Future<double> _goalBalance(Transaction txn, int goalId) async {
+    final rows = await txn.rawQuery(
+      'SELECT COALESCE(SUM(amount), 0.0) AS total '
+      'FROM savings_contributions WHERE goal_id = ?',
+      [goalId],
+    );
+    return (rows.first['total'] as num).toDouble();
+  }
+
+  /// Records money added or withdrawn. Returns false, saving nothing, when a
+  /// withdrawal is more than the goal holds.
+  Future<bool> addSavingsContribution(SavingsContribution c) async {
+    final db = await database;
+    return db.transaction((txn) async {
+      final balance = await _goalBalance(txn, c.goalId);
+      if (balance + c.amount < -0.005) return false;
+      await txn.insert('savings_contributions', c.toMap()..remove('id'));
+      return true;
+    });
+  }
+
+  /// Removes an entry from a goal's history. Returns false, removing nothing,
+  /// when that would leave the goal with less than zero.
+  Future<bool> deleteSavingsContribution(SavingsContribution c) async {
+    final db = await database;
+    return db.transaction((txn) async {
+      final balance = await _goalBalance(txn, c.goalId);
+      if (balance - c.amount < -0.005) return false;
+      await txn.delete('savings_contributions',
+          where: 'id = ?', whereArgs: [c.id]);
+      return true;
+    });
+  }
+
   // ---------- Budgets ----------
   static String monthKey(DateTime m) =>
       '${m.year}-${m.month.toString().padLeft(2, '0')}';
@@ -359,6 +584,7 @@ class DatabaseHelper {
     await db.close();
     _db = null;
     await deleteDatabase(path);
+    setCustomCategories(const []);
   }
 
   // ---------- Splitter Trips ----------

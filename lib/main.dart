@@ -12,6 +12,7 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   PremiumService.instance.initialize();
   await ThemeController.instance.load();
+  await DatabaseHelper.instance.loadCustomCategories();
   runApp(const ExpenseApp());
 }
 

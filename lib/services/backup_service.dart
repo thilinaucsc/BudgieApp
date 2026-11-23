@@ -119,14 +119,13 @@ class BackupService {
   Future<void> restoreData() async {
     final data = _pendingRestore;
     if (data == null) return;
-    final raw = await DatabaseHelper.instance.database;
+    final db = DatabaseHelper.instance;
+    final raw = await db.database;
 
     await raw.transaction((txn) async {
       for (final table in _tables) {
-        // Older backups have no trips, so keep the ones on this phone.
-        if (_splitterTables.contains(table) && !data.containsKey(table)) {
-          continue;
-        }
+        // Older backups lack newer tables, so keep what is on this phone.
+        if (!data.containsKey(table)) continue;
         await txn.delete(table);
         for (final row in (data[table] as List? ?? [])) {
           await txn.insert(table, Map<String, dynamic>.from(row as Map),
@@ -134,6 +133,7 @@ class BackupService {
         }
       }
     });
+    await db.loadCustomCategories();
     // Only clear pending data after all inserts succeed; if an insert throws,
     // the caller can retry by calling restoreData() again.
     _pendingRestore = null;
@@ -141,20 +141,20 @@ class BackupService {
 
   // ── Serialise ─────────────────────────────────────────────────────────────
 
-  static const _splitterTables = {
-    'splitter_trips',
-    'splitter_participants',
-    'splitter_expenses',
-    'splitter_expense_shares',
-  };
-
   static const _tables = [
     'expenses',
     'budgets',
     'household_items',
     'recurring_expenses',
     'category_budgets',
-    ..._splitterTables,
+    'splitter_trips',
+    'splitter_participants',
+    'splitter_expenses',
+    'splitter_expense_shares',
+    'income',
+    'savings_goals',
+    'savings_contributions',
+    'custom_categories',
     'settings',
   ];
 
