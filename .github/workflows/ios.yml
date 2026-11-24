@@ -41,8 +41,16 @@ jobs:
 
       # Signed with the debug key (see android/app/build.gradle.kts), which
       # is fine for installing directly on a phone but not for Google Play.
+      # On failure, the end of the log is posted as an annotation so it can
+      # be read without opening the full job log.
       - name: Build Android APK
-        run: flutter build apk --release
+        run: |
+          set -o pipefail
+          if ! flutter build apk --release 2>&1 | tee build.log; then
+            msg=$(tail -n 60 build.log | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')
+            echo "::error title=Android build failed::$msg"
+            exit 1
+          fi
 
       - name: Rename APK
         run: cp build/app/outputs/flutter-apk/app-release.apk budgie.apk
