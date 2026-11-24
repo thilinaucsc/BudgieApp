@@ -27,9 +27,11 @@
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>NSCameraUsageDescription</key>
-	<string>Budgie uses the camera to scan receipts and fill in expenses.</string>
+	<string>Budgie uses the camera to scan receipts and attach photos to expenses.</string>
+	<key>NSFaceIDUsageDescription</key>
+	<string>Budgie uses Face ID to unlock the app instead of your PIN.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
-	<string>Budgie reads receipt photos you choose to fill in expenses.</string>
+	<string>Budgie reads receipt photos you choose to fill in or attach to expenses.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

@@ -547,10 +547,25 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        e.category,
-                        style: const TextStyle(
-                            fontWeight: FontWeight.w500, fontSize: 15),
+                      Row(
+                        children: [
+                          Flexible(
+                            child: Text(
+                              e.category,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                  fontWeight: FontWeight.w500, fontSize: 15),
+                            ),
+                          ),
+                          if (e.photo != null) ...[
+                            const SizedBox(width: 6),
+                            Icon(Icons.photo_outlined,
+                                size: 15,
+                                color: cs.outline,
+                                semanticLabel: 'Has receipt photo'),
+                          ],
+                        ],
                       ),
                       if (e.note.isNotEmpty)
                         Text(

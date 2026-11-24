@@ -2,10 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../db/database_helper.dart';
 import '../services/backup_service.dart';
+import '../services/biometric_service.dart';
 import '../services/premium_service.dart';
 import '../services/theme_controller.dart';
 import 'categories_screen.dart';
 import 'category_budgets_screen.dart';
+import 'debts_screen.dart';
 import 'income_screen.dart';
 import 'premium_screen.dart';
 import 'recurring_screen.dart';
@@ -36,6 +38,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
   final db = DatabaseHelper.instance;
 
   bool _pinSet = false;
+  bool _biometricAvailable = false;
+  bool _biometricOn = false;
   String? _googleEmail;
 
   @override
@@ -52,8 +56,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
       final c = await db.getSetting('currency', 'Rs.');
       final pinHash = await db.getSetting('pin_hash', '');
       final googleAccount = await db.getSetting('google_account', '');
+      final biometricOn =
+          await db.getSetting(BiometricService.settingKey, '0') == '1';
+      final biometricAvailable =
+          await BiometricService.instance.isAvailable();
       if (!mounted) return;
       setState(() {
+        _biometricOn = biometricOn;
+        _biometricAvailable = biometricAvailable;
         _budget.text = b == null ? '' : b.toStringAsFixed(0);
         _currency.text = c;
         if (widget.initialPinSet == null) {
@@ -90,6 +100,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
       MaterialPageRoute(builder: (_) => const SetPinScreen()),
     );
     if (result == true) await _load();
+  }
+
+  Future<void> _toggleBiometric(bool on) async {
+    // Confirm the user can actually unlock before relying on it.
+    if (on &&
+        !await BiometricService.instance
+            .authenticate('Confirm to unlock Budgie this way')) {
+      return;
+    }
+    await db.setSetting(BiometricService.settingKey, on ? '1' : '0');
+    await _load();
   }
 
   Future<void> _googleTapped() async {
@@ -209,19 +230,37 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   trailing: const Icon(Icons.chevron_right, size: 20),
                   onTap: _setPinTapped,
                 ),
+                if (_biometricAvailable && _pinSet) ...[
+                  const Divider(height: 1, indent: 56),
+                  SwitchListTile(
+                    secondary: const Icon(Icons.fingerprint),
+                    title: const Text('Unlock with Face ID or fingerprint'),
+                    subtitle: const Text('Your PIN still works as a backup'),
+                    value: _biometricOn,
+                    onChanged: _toggleBiometric,
+                  ),
+                ],
                 const Divider(height: 1, indent: 56),
-                ListTile(
-                  leading: const Icon(Icons.cloud_outlined),
-                  title: Text(_googleEmail != null
-                      ? 'Unlink Google'
-                      : 'Link Google Account'),
-                  subtitle: _googleEmail != null
-                      ? Text(_googleEmail!,
-                          style: const TextStyle(fontSize: 12))
-                      : const Text('Enable cloud backup & PIN recovery'),
-                  trailing: const Icon(Icons.chevron_right, size: 20),
-                  onTap: _googleTapped,
-                ),
+                if (!BackupService.isSupported)
+                  const ListTile(
+                    enabled: false,
+                    leading: Icon(Icons.cloud_off_outlined),
+                    title: Text('Google backup'),
+                    subtitle: Text('Not available on iPhone yet'),
+                  )
+                else
+                  ListTile(
+                    leading: const Icon(Icons.cloud_outlined),
+                    title: Text(_googleEmail != null
+                        ? 'Unlink Google'
+                        : 'Link Google Account'),
+                    subtitle: _googleEmail != null
+                        ? Text(_googleEmail!,
+                            style: const TextStyle(fontSize: 12))
+                        : const Text('Enable cloud backup & PIN recovery'),
+                    trailing: const Icon(Icons.chevron_right, size: 20),
+                    onTap: _googleTapped,
+                  ),
                 if (_googleEmail != null) ...[
                   const Divider(height: 1, indent: 56),
                   ListTile(
@@ -265,6 +304,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     context,
                     MaterialPageRoute(
                         builder: (_) => const SavingsGoalsScreen()),
+                  ),
+                ),
+                const Divider(height: 1, indent: 56),
+                ListTile(
+                  leading: const Icon(Icons.handshake_outlined),
+                  title: const Text('Lent and borrowed'),
+                  subtitle: const Text('Money between you and others'),
+                  trailing: const Icon(Icons.chevron_right, size: 20),
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const DebtsScreen()),
                   ),
                 ),
                 const Divider(height: 1, indent: 56),

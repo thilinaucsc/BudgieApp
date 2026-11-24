@@ -9,6 +9,7 @@ import '../db/database_helper.dart';
 import '../models/expense.dart';
 import '../models/expense_category.dart';
 import '../services/csv_export.dart';
+import 'trends_screen.dart';
 
 class ReportsScreen extends StatefulWidget {
   final DateTime month;
@@ -89,6 +90,17 @@ class _ReportsScreenState extends State<ReportsScreen> {
       appBar: AppBar(
         title: const Text('Reports'),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.trending_up_rounded),
+            tooltip: 'Spending trends',
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) =>
+                    TrendsScreen(month: month, currency: widget.currency),
+              ),
+            ),
+          ),
           Builder(
             builder: (buttonContext) => IconButton(
               icon: const Icon(Icons.ios_share_rounded),

@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:googleapis/drive/v3.dart' as drive;
@@ -10,6 +11,10 @@ class BackupService {
   BackupService._();
   static final BackupService instance = BackupService._();
 
+  /// Google Sign-In needs an iOS client ID in Info.plist, which this app
+  /// does not have yet, so cloud backup is Android only for now.
+  static bool get isSupported => !Platform.isIOS;
+
   final _googleSignIn = GoogleSignIn(
     scopes: [drive.DriveApi.driveAppdataScope],
   );
@@ -17,6 +22,7 @@ class BackupService {
   // ── Auth ──────────────────────────────────────────────────────────────────
 
   Future<bool> signIn() async {
+    if (!isSupported) return false;
     try {
       final account = await _googleSignIn.signIn();
       if (account == null) return false;
@@ -41,6 +47,7 @@ class BackupService {
   // ── Drive client ──────────────────────────────────────────────────────────
 
   Future<drive.DriveApi?> _driveApi() async {
+    if (!isSupported) return null;
     try {
       GoogleSignInAccount? account = _googleSignIn.currentUser;
       account ??= await _googleSignIn.signInSilently();
@@ -57,6 +64,9 @@ class BackupService {
 
   Future<void> backup() async {
     try {
+      // Without a linked account there is nothing to back up to. Skipping
+      // here also avoids touching Google Sign-In where it isn't configured.
+      if (await accountEmail() == null) return;
       final api = await _driveApi();
       if (api == null) return;
       final json = await _serialize();
@@ -155,6 +165,8 @@ class BackupService {
     'savings_goals',
     'savings_contributions',
     'custom_categories',
+    'debts',
+    'debt_payments',
     'settings',
   ];
 

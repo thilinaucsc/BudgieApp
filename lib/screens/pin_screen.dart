@@ -1,11 +1,20 @@
 import 'package:flutter/material.dart';
 import '../db/database_helper.dart';
 import '../services/backup_service.dart';
+import '../services/biometric_service.dart';
 import 'set_pin_screen.dart';
 
 class PinScreen extends StatefulWidget {
   final String? storedHash; // injected for testing; null = load from DB
-  const PinScreen({super.key, this.storedHash});
+  final bool? biometricEnabled; // injected for testing; null = load from DB
+  final Future<bool> Function()? authenticate; // injected for testing
+
+  const PinScreen({
+    super.key,
+    this.storedHash,
+    this.biometricEnabled,
+    this.authenticate,
+  });
 
   @override
   State<PinScreen> createState() => _PinScreenState();
@@ -19,6 +28,7 @@ class _PinScreenState extends State<PinScreen>
   late AnimationController _shake;
   late Animation<double> _shakeAnim;
   String? _storedHash;
+  bool _biometricOn = false;
 
   @override
   void initState() {
@@ -33,11 +43,35 @@ class _PinScreenState extends State<PinScreen>
     ]).animate(_shake);
     _storedHash = widget.storedHash;
     if (_storedHash == null) _loadHash();
+    _loadBiometric();
   }
 
   Future<void> _loadHash() async {
     final h = await db.getSetting('pin_hash', '');
     if (mounted) setState(() => _storedHash = h);
+  }
+
+  Future<void> _loadBiometric() async {
+    var on = widget.biometricEnabled;
+    if (on == null) {
+      try {
+        on = await db.getSetting(BiometricService.settingKey, '0') == '1' &&
+            await BiometricService.instance.isAvailable();
+      } catch (_) {
+        on = false;
+      }
+    }
+    if (!mounted || !on) return;
+    setState(() => _biometricOn = true);
+    _useBiometrics();
+  }
+
+  Future<void> _useBiometrics() async {
+    final authenticate = widget.authenticate ??
+        () => BiometricService.instance.authenticate('Unlock Budgie');
+    if (await authenticate() && mounted) {
+      Navigator.pushReplacementNamed(context, '/home');
+    }
   }
 
   @override
@@ -219,7 +253,20 @@ class _PinScreenState extends State<PinScreen>
   }
 
   Widget _numKey(String k, ColorScheme cs) {
-    if (k.isEmpty) return const SizedBox(width: 88, height: 72);
+    if (k.isEmpty) {
+      // The spare key beside 0 holds the Face ID button when it is on.
+      return SizedBox(
+        width: 88,
+        height: 72,
+        child: _biometricOn
+            ? IconButton(
+                onPressed: _useBiometrics,
+                tooltip: 'Use Face ID or fingerprint',
+                icon: Icon(Icons.fingerprint, size: 30, color: cs.primary),
+              )
+            : null,
+      );
+    }
     final isBackspace = k == '⌫';
     return SizedBox(
       width: 88,

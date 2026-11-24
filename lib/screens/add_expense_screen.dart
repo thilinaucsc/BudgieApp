@@ -8,7 +8,9 @@ import '../models/expense_category.dart';
 import '../services/gemini_service.dart';
 import '../services/mlkit_service.dart';
 import '../services/premium_service.dart';
+import '../services/receipt_photos.dart';
 import 'premium_screen.dart';
+import 'receipt_photo_screen.dart';
 
 class AddExpenseScreen extends StatefulWidget {
   final Expense? expense;
@@ -27,6 +29,13 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
   bool _scanning = false;
   String _currency = 'Rs.';
 
+  // The photo saved with this expense, and one picked but not yet saved.
+  File? _savedPhoto;
+  File? _newPhoto;
+  bool _photoRemoved = false;
+
+  File? get _shownPhoto => _newPhoto ?? (_photoRemoved ? null : _savedPhoto);
+
   bool get isEdit => widget.expense != null;
 
   @override
@@ -39,7 +48,27 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
     _category = e?.category ?? categories.first.name;
     _date = e?.date ?? DateTime.now();
     _loadCurrency();
+    _loadPhoto();
   }
+
+  Future<void> _loadPhoto() async {
+    final file = await ReceiptPhotos.instance.find(widget.expense?.photo);
+    if (mounted && file != null) setState(() => _savedPhoto = file);
+  }
+
+  Future<void> _attachPhoto() async {
+    final source = await _pickSource();
+    if (source == null || !mounted) return;
+    final picked = await ImagePicker()
+        .pickImage(source: source, maxWidth: 1600, imageQuality: 75);
+    if (picked == null || !mounted) return;
+    setState(() => _newPhoto = File(picked.path));
+  }
+
+  void _removePhoto() => setState(() {
+        _newPhoto = null;
+        _photoRemoved = true;
+      });
 
   Future<void> _loadCurrency() async {
     final c =
@@ -125,6 +154,8 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
       return;
     }
     setState(() {
+      // Keep the scanned bill with the expense unless one is attached.
+      if (_shownPhoto == null) _newPhoto = File(picked.path);
       if (result.amount != null) {
         _amount.text = result.amount!.toStringAsFixed(2);
       }
@@ -136,12 +167,17 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
 
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
+    final photos = ReceiptPhotos.instance;
+    final oldPhoto = widget.expense?.photo;
+    var photo = _photoRemoved ? null : oldPhoto;
+    if (_newPhoto != null) photo = await photos.save(_newPhoto!);
     final expense = Expense(
       id: widget.expense?.id,
       amount: double.parse(_amount.text.trim()),
       category: _category,
       date: _date,
       note: _note.text.trim(),
+      photo: photo,
     );
     final db = DatabaseHelper.instance;
     if (isEdit) {
@@ -149,6 +185,8 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
     } else {
       await db.insertExpense(expense);
     }
+    // Only drop the old photo once the expense no longer points to it.
+    if (oldPhoto != null && oldPhoto != photo) await photos.delete(oldPhoto);
     if (mounted) Navigator.pop(context, true);
   }
 
@@ -216,6 +254,8 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
               decoration:
                   const InputDecoration(labelText: 'Note (optional)'),
             ),
+            const SizedBox(height: 16),
+            _photoSection(cs),
             const SizedBox(height: 24),
             FilledButton(
               onPressed: _save,
@@ -282,6 +322,65 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
           ),
         );
       },
+    );
+  }
+
+  Widget _photoSection(ColorScheme cs) {
+    final photo = _shownPhoto;
+    if (photo == null) {
+      return OutlinedButton.icon(
+        onPressed: _attachPhoto,
+        icon: const Icon(Icons.add_a_photo_outlined),
+        label: const Text('Attach receipt photo'),
+        style: OutlinedButton.styleFrom(
+          minimumSize: const Size.fromHeight(48),
+          shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12)),
+        ),
+      );
+    }
+    return Container(
+      padding: const EdgeInsets.all(8),
+      decoration: BoxDecoration(
+        color: cs.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [
+          GestureDetector(
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                  builder: (_) => ReceiptPhotoScreen(file: photo)),
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: Image.file(
+                photo,
+                width: 56,
+                height: 56,
+                fit: BoxFit.cover,
+                errorBuilder: (_, _, _) => Container(
+                  width: 56,
+                  height: 56,
+                  color: cs.surface,
+                  child: Icon(Icons.broken_image_outlined, color: cs.outline),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          const Expanded(
+            child: Text('Receipt photo', style: TextStyle(fontSize: 14)),
+          ),
+          TextButton(onPressed: _attachPhoto, child: const Text('Replace')),
+          IconButton(
+            icon: const Icon(Icons.close),
+            tooltip: 'Remove photo',
+            onPressed: _removePhoto,
+          ),
+        ],
+      ),
     );
   }
 

@@ -3,6 +3,7 @@ import 'package:crypto/crypto.dart';
 import 'package:path/path.dart';
 import 'package:sqflite/sqflite.dart';
 import '../models/custom_category.dart';
+import '../models/debt.dart';
 import '../models/expense.dart';
 import '../models/expense_category.dart';
 import '../models/expense_filter.dart';
@@ -10,9 +11,11 @@ import '../models/household_item.dart';
 import '../models/income.dart';
 import '../models/recurring_expense.dart';
 import '../models/savings_goal.dart';
+import '../models/spending_trend.dart';
 import '../models/splitter_trip.dart';
 import '../models/splitter_participant.dart';
 import '../models/splitter_expense.dart';
+import '../services/receipt_photos.dart';
 
 String hashPin(String pin) => sha256.convert(utf8.encode(pin)).toString();
 
@@ -28,7 +31,7 @@ class DatabaseHelper {
     final path = join(await getDatabasesPath(), 'expenses.db');
     return openDatabase(
       path,
-      version: 5,
+      version: 6,
       onCreate: (db, version) async {
         await db.execute('''
           CREATE TABLE expenses(
@@ -36,7 +39,8 @@ class DatabaseHelper {
             amount REAL NOT NULL,
             category TEXT NOT NULL,
             date TEXT NOT NULL,
-            note TEXT
+            note TEXT,
+            photo TEXT
           )''');
         await db.execute('''
           CREATE TABLE budgets(
@@ -85,6 +89,7 @@ class DatabaseHelper {
           )''');
         await _createPlanningTables(db);
         await _createMoneyTables(db);
+        await _createDebtTables(db);
       },
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 2) {
@@ -132,8 +137,31 @@ class DatabaseHelper {
         if (oldVersion < 5) {
           await _createMoneyTables(db);
         }
+        if (oldVersion < 6) {
+          await db.execute('ALTER TABLE expenses ADD COLUMN photo TEXT');
+          await _createDebtTables(db);
+        }
       },
     );
+  }
+
+  Future<void> _createDebtTables(Database db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS debts(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        person TEXT NOT NULL,
+        direction TEXT NOT NULL,
+        amount REAL NOT NULL,
+        date TEXT NOT NULL,
+        note TEXT NOT NULL DEFAULT ''
+      )''');
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS debt_payments(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        debt_id INTEGER NOT NULL,
+        amount REAL NOT NULL,
+        date TEXT NOT NULL
+      )''');
   }
 
   Future<void> _createMoneyTables(Database db) async {
@@ -200,9 +228,125 @@ class DatabaseHelper {
     return db.update('expenses', e.toMap(), where: 'id = ?', whereArgs: [e.id]);
   }
 
+  /// Deletes the expense and its receipt photo.
   Future<int> deleteExpense(int id) async {
     final db = await database;
-    return db.delete('expenses', where: 'id = ?', whereArgs: [id]);
+    final rows = await db.query('expenses',
+        columns: ['photo'], where: 'id = ?', whereArgs: [id]);
+    final deleted =
+        await db.delete('expenses', where: 'id = ?', whereArgs: [id]);
+    if (rows.isNotEmpty) {
+      await ReceiptPhotos.instance.delete(rows.first['photo'] as String?);
+    }
+    return deleted;
+  }
+
+  // ---------- Trends ----------
+  /// Spending for the [count] months ending with [lastMonth], oldest first.
+  Future<List<MonthTotal>> monthlyTotals(DateTime lastMonth, int count) async {
+    final db = await database;
+    final start = DateTime(lastMonth.year, lastMonth.month - count + 1, 1);
+    final end = DateTime(lastMonth.year, lastMonth.month + 1, 1);
+    final rows = await db.rawQuery(
+      'SELECT substr(date, 1, 7) AS month, SUM(amount) AS total '
+      'FROM expenses WHERE date >= ? AND date < ? GROUP BY month',
+      [start.toIso8601String(), end.toIso8601String()],
+    );
+    return fillMonths(lastMonth, count, {
+      for (final r in rows)
+        r['month'] as String: (r['total'] as num).toDouble(),
+    });
+  }
+
+  Future<Map<String, double>> categoryTotals(DateTime month) async {
+    final db = await database;
+    final start = DateTime(month.year, month.month, 1);
+    final end = DateTime(month.year, month.month + 1, 1);
+    final rows = await db.rawQuery(
+      'SELECT category, SUM(amount) AS total FROM expenses '
+      'WHERE date >= ? AND date < ? GROUP BY category',
+      [start.toIso8601String(), end.toIso8601String()],
+    );
+    return {
+      for (final r in rows)
+        r['category'] as String: (r['total'] as num).toDouble(),
+    };
+  }
+
+  // ---------- Lent and Borrowed ----------
+  Future<List<Debt>> getDebts() async {
+    final db = await database;
+    final rows = await db.rawQuery(
+      'SELECT d.*, COALESCE(SUM(p.amount), 0.0) AS paid '
+      'FROM debts d '
+      'LEFT JOIN debt_payments p ON p.debt_id = d.id '
+      'GROUP BY d.id '
+      'ORDER BY d.date DESC, d.id DESC',
+    );
+    return rows.map(Debt.fromMap).toList();
+  }
+
+  /// Names already used, so the form can suggest them.
+  Future<List<String>> debtPeople() async {
+    final db = await database;
+    final rows = await db.rawQuery(
+        'SELECT DISTINCT person FROM debts ORDER BY person COLLATE NOCASE');
+    return rows.map((r) => r['person'] as String).toList();
+  }
+
+  Future<int> insertDebt(Debt debt) async {
+    final db = await database;
+    return db.insert('debts', debt.toMap()..remove('id'));
+  }
+
+  Future<int> updateDebt(Debt debt) async {
+    final db = await database;
+    return db.update('debts', debt.toMap(),
+        where: 'id = ?', whereArgs: [debt.id]);
+  }
+
+  Future<void> deleteDebt(int id) async {
+    final db = await database;
+    await db.transaction((txn) async {
+      await txn.delete('debt_payments', where: 'debt_id = ?', whereArgs: [id]);
+      await txn.delete('debts', where: 'id = ?', whereArgs: [id]);
+    });
+  }
+
+  Future<List<DebtPayment>> paymentsForDebt(int debtId) async {
+    final db = await database;
+    final rows = await db.query(
+      'debt_payments',
+      where: 'debt_id = ?',
+      whereArgs: [debtId],
+      orderBy: 'date DESC, id DESC',
+    );
+    return rows.map(DebtPayment.fromMap).toList();
+  }
+
+  /// Records money paid back. Returns false, saving nothing, when it is more
+  /// than what is still owed.
+  Future<bool> addDebtPayment(DebtPayment payment) async {
+    final db = await database;
+    return db.transaction((txn) async {
+      final rows = await txn.rawQuery(
+        'SELECT d.amount, COALESCE(SUM(p.amount), 0.0) AS paid '
+        'FROM debts d LEFT JOIN debt_payments p ON p.debt_id = d.id '
+        'WHERE d.id = ? GROUP BY d.id',
+        [payment.debtId],
+      );
+      if (rows.isEmpty) return false;
+      final remaining = (rows.first['amount'] as num).toDouble() -
+          (rows.first['paid'] as num).toDouble();
+      if (payment.amount > remaining + 0.005) return false;
+      await txn.insert('debt_payments', payment.toMap()..remove('id'));
+      return true;
+    });
+  }
+
+  Future<void> deleteDebtPayment(int id) async {
+    final db = await database;
+    await db.delete('debt_payments', where: 'id = ?', whereArgs: [id]);
   }
 
   Future<List<Expense>> expensesForMonth(DateTime month) async {
@@ -585,6 +729,7 @@ class DatabaseHelper {
     _db = null;
     await deleteDatabase(path);
     setCustomCategories(const []);
+    await ReceiptPhotos.instance.deleteAll();
   }
 
   // ---------- Splitter Trips ----------
