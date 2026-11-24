@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+
 import '../db/database_helper.dart';
 import '../services/app_lock.dart';
 import '../services/backup_service.dart';
@@ -10,6 +11,7 @@ import 'accounts_screen.dart';
 import 'categories_screen.dart';
 import 'category_budgets_screen.dart';
 import 'debts_screen.dart';
+import 'favourites_screen.dart';
 import 'income_screen.dart';
 import 'premium_screen.dart';
 import 'recurring_screen.dart';
@@ -61,10 +63,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
       final googleAccount = await db.getSetting('google_account', '');
       final biometricOn =
           await db.getSetting(BiometricService.settingKey, '0') == '1';
-      final biometricAvailable =
-          await BiometricService.instance.isAvailable();
-      final autoLock =
-          AppLock.parse(await db.getSetting(AppLock.settingKey, '0'));
+      final biometricAvailable = await BiometricService.instance.isAvailable();
+      final autoLock = AppLock.parse(
+        await db.getSetting(AppLock.settingKey, '0'),
+      );
       if (!mounted) return;
       setState(() {
         _autoLock = autoLock;
@@ -76,8 +78,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           _pinSet = pinHash.isNotEmpty;
         }
         if (widget.initialGoogleEmail == null) {
-          _googleEmail =
-              googleAccount.isEmpty ? null : googleAccount;
+          _googleEmail = googleAccount.isEmpty ? null : googleAccount;
         }
       });
     } catch (_) {}
@@ -111,8 +112,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Future<void> _toggleBiometric(bool on) async {
     // Confirm the user can actually unlock before relying on it.
     if (on &&
-        !await BiometricService.instance
-            .authenticate('Confirm to unlock Budgie this way')) {
+        !await BiometricService.instance.authenticate(
+          'Confirm to unlock Budgie this way',
+        )) {
       return;
     }
     await db.setSetting(BiometricService.settingKey, on ? '1' : '0');
@@ -132,8 +134,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 children: [
                   Expanded(child: Text(AppLock.label(minutes))),
                   if (minutes == _autoLock)
-                    Icon(Icons.check,
-                        color: Theme.of(context).colorScheme.primary),
+                    Icon(
+                      Icons.check,
+                      color: Theme.of(context).colorScheme.primary,
+                    ),
                 ],
               ),
             ),
@@ -168,8 +172,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     if (!mounted) return;
     if (!ok) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-            content: Text('Restore failed — no backup found')),
+        const SnackBar(content: Text('Restore failed — no backup found')),
       );
       return;
     }
@@ -178,14 +181,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
       builder: (_) => AlertDialog(
         title: const Text('Restore from cloud?'),
         content: const Text(
-            'This will overwrite your local data with the cloud backup. Continue?'),
+          'This will overwrite your local data with the cloud backup. Continue?',
+        ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('Cancel')),
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
           FilledButton(
-              onPressed: () => Navigator.pop(context, true),
-              child: const Text('Restore')),
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Restore'),
+          ),
         ],
       ),
     );
@@ -194,8 +200,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       await ThemeController.instance.load();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-              content: Text('Restored from cloud backup')),
+          const SnackBar(content: Text('Restored from cloud backup')),
         );
       }
     }
@@ -211,290 +216,289 @@ class _SettingsScreenState extends State<SettingsScreen> {
         child: ListView(
           padding: const EdgeInsets.fromLTRB(16, 20, 16, 40),
           children: [
-            _sectionCard(
-              'Budget',
-              [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-                  child: TextFormField(
-                    controller: _budget,
-                    keyboardType: const TextInputType.numberWithOptions(
-                        decimal: true),
-                    decoration: InputDecoration(
-                      labelText: 'Monthly budget from $monthName',
-                      helperText:
-                          'Applies to later months until you change it.',
-                    ),
-                    validator: (v) {
-                      final t = (v ?? '').trim();
-                      if (t.isEmpty) return null;
-                      final value = double.tryParse(t);
-                      if (value == null || value <= 0) {
-                        return 'Enter a number greater than 0';
-                      }
-                      return null;
-                    },
+            _sectionCard('Budget', [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                child: TextFormField(
+                  controller: _budget,
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
                   ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                  child: TextFormField(
-                    controller: _currency,
-                    decoration: const InputDecoration(
-                      labelText: 'Currency symbol',
-                      hintText: r'Rs., $, €',
-                    ),
-                    validator: (v) => (v ?? '').trim().isEmpty
-                        ? 'Enter a currency symbol'
-                        : null,
+                  decoration: InputDecoration(
+                    labelText: 'Monthly budget from $monthName',
+                    helperText: 'Applies to later months until you change it.',
                   ),
-                ),
-              ],
-            ),
-            FilledButton(onPressed: _save, child: const Text('Save settings')),
-            const SizedBox(height: 28),
-            _sectionCard(
-              'Security & Backup',
-              [
-                ListTile(
-                  leading: const Icon(Icons.lock_outline),
-                  title: Text(_pinSet ? 'Change PIN' : 'Set PIN'),
-                  trailing: const Icon(Icons.chevron_right, size: 20),
-                  onTap: _setPinTapped,
-                ),
-                if (_biometricAvailable && _pinSet) ...[
-                  const Divider(height: 1, indent: 56),
-                  SwitchListTile(
-                    secondary: const Icon(Icons.fingerprint),
-                    title: const Text('Unlock with Face ID or fingerprint'),
-                    subtitle: const Text('Your PIN still works as a backup'),
-                    value: _biometricOn,
-                    onChanged: _toggleBiometric,
-                  ),
-                ],
-                if (_pinSet) ...[
-                  const Divider(height: 1, indent: 56),
-                  ListTile(
-                    leading: const Icon(Icons.timer_outlined),
-                    title: const Text('Auto-lock'),
-                    subtitle: Text(AppLock.label(_autoLock)),
-                    trailing: const Icon(Icons.chevron_right, size: 20),
-                    onTap: _pickAutoLock,
-                  ),
-                ],
-                const Divider(height: 1, indent: 56),
-                if (!BackupService.isSupported)
-                  const ListTile(
-                    enabled: false,
-                    leading: Icon(Icons.cloud_off_outlined),
-                    title: Text('Google backup'),
-                    subtitle: Text('Not available on iPhone yet'),
-                  )
-                else
-                  ListTile(
-                    leading: const Icon(Icons.cloud_outlined),
-                    title: Text(_googleEmail != null
-                        ? 'Unlink Google'
-                        : 'Link Google Account'),
-                    subtitle: _googleEmail != null
-                        ? Text(_googleEmail!,
-                            style: const TextStyle(fontSize: 12))
-                        : const Text('Enable cloud backup & PIN recovery'),
-                    trailing: const Icon(Icons.chevron_right, size: 20),
-                    onTap: _googleTapped,
-                  ),
-                if (_googleEmail != null) ...[
-                  const Divider(height: 1, indent: 56),
-                  ListTile(
-                    leading: const Icon(Icons.backup_outlined),
-                    title: const Text('Back up now'),
-                    trailing: const Icon(Icons.chevron_right, size: 20),
-                    onTap: _backupNow,
-                  ),
-                  const Divider(height: 1, indent: 56),
-                  ListTile(
-                    leading: const Icon(Icons.restore_outlined),
-                    title: const Text('Restore from cloud'),
-                    trailing: const Icon(Icons.chevron_right, size: 20),
-                    onTap: _restoreFromCloud,
-                  ),
-                ],
-              ],
-            ),
-            _sectionCard(
-              'Planning',
-              [
-                ListTile(
-                  leading: const Icon(Icons.account_balance_wallet_outlined),
-                  title: const Text('Accounts'),
-                  subtitle: const Text('Cash, bank and card balances'),
-                  trailing: const Icon(Icons.chevron_right, size: 20),
-                  onTap: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (_) => const AccountsScreen()),
-                  ),
-                ),
-                const Divider(height: 1, indent: 56),
-                ListTile(
-                  leading: const Icon(Icons.payments_outlined),
-                  title: const Text('Income'),
-                  subtitle: const Text('Salary and money you receive'),
-                  trailing: const Icon(Icons.chevron_right, size: 20),
-                  onTap: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => IncomeScreen(month: widget.month),
-                    ),
-                  ),
-                ),
-                const Divider(height: 1, indent: 56),
-                ListTile(
-                  leading: const Icon(Icons.savings_outlined),
-                  title: const Text('Savings goals'),
-                  subtitle: const Text('Save towards a target'),
-                  trailing: const Icon(Icons.chevron_right, size: 20),
-                  onTap: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                        builder: (_) => const SavingsGoalsScreen()),
-                  ),
-                ),
-                const Divider(height: 1, indent: 56),
-                ListTile(
-                  leading: const Icon(Icons.handshake_outlined),
-                  title: const Text('Lent and borrowed'),
-                  subtitle: const Text('Money between you and others'),
-                  trailing: const Icon(Icons.chevron_right, size: 20),
-                  onTap: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (_) => const DebtsScreen()),
-                  ),
-                ),
-                const Divider(height: 1, indent: 56),
-                ListTile(
-                  leading: const Icon(Icons.event_repeat_outlined),
-                  title: const Text('Recurring expenses'),
-                  subtitle: const Text('Rent, bills and subscriptions'),
-                  trailing: const Icon(Icons.chevron_right, size: 20),
-                  onTap: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                        builder: (_) => const RecurringScreen()),
-                  ),
-                ),
-                const Divider(height: 1, indent: 56),
-                ListTile(
-                  leading: const Icon(Icons.donut_small_outlined),
-                  title: const Text('Category budgets'),
-                  subtitle: const Text('Monthly limits for each category'),
-                  trailing: const Icon(Icons.chevron_right, size: 20),
-                  onTap: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) =>
-                          CategoryBudgetsScreen(month: widget.month),
-                    ),
-                  ),
-                ),
-                const Divider(height: 1, indent: 56),
-                ListTile(
-                  leading: const Icon(Icons.category_outlined),
-                  title: const Text('Categories'),
-                  subtitle: const Text('Create your own categories'),
-                  trailing: const Icon(Icons.chevron_right, size: 20),
-                  onTap: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                        builder: (_) => const CategoriesScreen()),
-                  ),
-                ),
-                const Divider(height: 1, indent: 56),
-                ListTile(
-                  leading: const Icon(Icons.notifications_outlined),
-                  title: const Text('Reminders'),
-                  subtitle: const Text('Bill and daily notifications'),
-                  trailing: const Icon(Icons.chevron_right, size: 20),
-                  onTap: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                        builder: (_) => const RemindersScreen()),
-                  ),
-                ),
-              ],
-            ),
-            _sectionCard(
-              'Appearance',
-              [
-                Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: ValueListenableBuilder<ThemeMode>(
-                    valueListenable: ThemeController.instance,
-                    builder: (_, mode, _) => SizedBox(
-                      width: double.infinity,
-                      child: SegmentedButton<ThemeMode>(
-                        showSelectedIcon: false,
-                        segments: const [
-                          ButtonSegment(
-                            value: ThemeMode.system,
-                            label: Text('System'),
-                            icon: Icon(Icons.brightness_auto_outlined),
-                          ),
-                          ButtonSegment(
-                            value: ThemeMode.light,
-                            label: Text('Light'),
-                            icon: Icon(Icons.light_mode_outlined),
-                          ),
-                          ButtonSegment(
-                            value: ThemeMode.dark,
-                            label: Text('Dark'),
-                            icon: Icon(Icons.dark_mode_outlined),
-                          ),
-                        ],
-                        selected: {mode},
-                        onSelectionChanged: (s) =>
-                            ThemeController.instance.setMode(s.first),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            _sectionCard(
-              'Premium',
-              [
-                ListTile(
-                  leading: Icon(Icons.star_outline_rounded,
-                      color: Theme.of(context).colorScheme.primary),
-                  title: const Text('Upgrade to Premium'),
-                  subtitle: const Text('Unlock bill photo scanning'),
-                  trailing: const Icon(Icons.chevron_right, size: 20),
-                  onTap: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                        builder: (_) => const PremiumScreen()),
-                  ),
-                ),
-                const Divider(height: 1, indent: 56),
-                ListTile(
-                  leading: const Icon(Icons.restore_page_outlined),
-                  title: const Text('Restore purchase'),
-                  trailing: const Icon(Icons.chevron_right, size: 20),
-                  onTap: () async {
-                    final messenger = ScaffoldMessenger.of(context);
-                    await PremiumService.instance.restore();
-                    if (!mounted) return;
-                    final premium =
-                        await PremiumService.instance.isPremium();
-                    if (!mounted) return;
-                    messenger.showSnackBar(SnackBar(
-                      content: Text(premium
-                          ? 'Premium restored!'
-                          : 'No previous purchase found.'),
-                    ));
+                  validator: (v) {
+                    final t = (v ?? '').trim();
+                    if (t.isEmpty) return null;
+                    final value = double.tryParse(t);
+                    if (value == null || value <= 0) {
+                      return 'Enter a number greater than 0';
+                    }
+                    return null;
                   },
                 ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                child: TextFormField(
+                  controller: _currency,
+                  decoration: const InputDecoration(
+                    labelText: 'Currency symbol',
+                    hintText: r'Rs., $, €',
+                  ),
+                  validator: (v) => (v ?? '').trim().isEmpty
+                      ? 'Enter a currency symbol'
+                      : null,
+                ),
+              ),
+            ]),
+            FilledButton(onPressed: _save, child: const Text('Save settings')),
+            const SizedBox(height: 28),
+            _sectionCard('Security & Backup', [
+              ListTile(
+                leading: const Icon(Icons.lock_outline),
+                title: Text(_pinSet ? 'Change PIN' : 'Set PIN'),
+                trailing: const Icon(Icons.chevron_right, size: 20),
+                onTap: _setPinTapped,
+              ),
+              if (_biometricAvailable && _pinSet) ...[
+                const Divider(height: 1, indent: 56),
+                SwitchListTile(
+                  secondary: const Icon(Icons.fingerprint),
+                  title: const Text('Unlock with Face ID or fingerprint'),
+                  subtitle: const Text('Your PIN still works as a backup'),
+                  value: _biometricOn,
+                  onChanged: _toggleBiometric,
+                ),
               ],
-            ),
+              if (_pinSet) ...[
+                const Divider(height: 1, indent: 56),
+                ListTile(
+                  leading: const Icon(Icons.timer_outlined),
+                  title: const Text('Auto-lock'),
+                  subtitle: Text(AppLock.label(_autoLock)),
+                  trailing: const Icon(Icons.chevron_right, size: 20),
+                  onTap: _pickAutoLock,
+                ),
+              ],
+              const Divider(height: 1, indent: 56),
+              if (!BackupService.isSupported)
+                const ListTile(
+                  enabled: false,
+                  leading: Icon(Icons.cloud_off_outlined),
+                  title: Text('Google backup'),
+                  subtitle: Text('Not available on iPhone yet'),
+                )
+              else
+                ListTile(
+                  leading: const Icon(Icons.cloud_outlined),
+                  title: Text(
+                    _googleEmail != null
+                        ? 'Unlink Google'
+                        : 'Link Google Account',
+                  ),
+                  subtitle: _googleEmail != null
+                      ? Text(
+                          _googleEmail!,
+                          style: const TextStyle(fontSize: 12),
+                        )
+                      : const Text('Enable cloud backup & PIN recovery'),
+                  trailing: const Icon(Icons.chevron_right, size: 20),
+                  onTap: _googleTapped,
+                ),
+              if (_googleEmail != null) ...[
+                const Divider(height: 1, indent: 56),
+                ListTile(
+                  leading: const Icon(Icons.backup_outlined),
+                  title: const Text('Back up now'),
+                  trailing: const Icon(Icons.chevron_right, size: 20),
+                  onTap: _backupNow,
+                ),
+                const Divider(height: 1, indent: 56),
+                ListTile(
+                  leading: const Icon(Icons.restore_outlined),
+                  title: const Text('Restore from cloud'),
+                  trailing: const Icon(Icons.chevron_right, size: 20),
+                  onTap: _restoreFromCloud,
+                ),
+              ],
+            ]),
+            _sectionCard('Planning', [
+              ListTile(
+                leading: const Icon(Icons.account_balance_wallet_outlined),
+                title: const Text('Accounts'),
+                subtitle: const Text('Cash, bank and card balances'),
+                trailing: const Icon(Icons.chevron_right, size: 20),
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const AccountsScreen()),
+                ),
+              ),
+              const Divider(height: 1, indent: 56),
+              ListTile(
+                leading: const Icon(Icons.payments_outlined),
+                title: const Text('Income'),
+                subtitle: const Text('Salary and money you receive'),
+                trailing: const Icon(Icons.chevron_right, size: 20),
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => IncomeScreen(month: widget.month),
+                  ),
+                ),
+              ),
+              const Divider(height: 1, indent: 56),
+              ListTile(
+                leading: const Icon(Icons.savings_outlined),
+                title: const Text('Savings goals'),
+                subtitle: const Text('Save towards a target'),
+                trailing: const Icon(Icons.chevron_right, size: 20),
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const SavingsGoalsScreen()),
+                ),
+              ),
+              const Divider(height: 1, indent: 56),
+              ListTile(
+                leading: const Icon(Icons.handshake_outlined),
+                title: const Text('Lent and borrowed'),
+                subtitle: const Text('Money between you and others'),
+                trailing: const Icon(Icons.chevron_right, size: 20),
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const DebtsScreen()),
+                ),
+              ),
+              const Divider(height: 1, indent: 56),
+              ListTile(
+                leading: const Icon(Icons.bolt_outlined),
+                title: const Text('Quick add'),
+                subtitle: const Text('One-tap favourites on the home screen'),
+                trailing: const Icon(Icons.chevron_right, size: 20),
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const FavouritesScreen()),
+                ),
+              ),
+              const Divider(height: 1, indent: 56),
+              ListTile(
+                leading: const Icon(Icons.event_repeat_outlined),
+                title: const Text('Recurring'),
+                subtitle: const Text('Rent, bills, salary and subscriptions'),
+                trailing: const Icon(Icons.chevron_right, size: 20),
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const RecurringScreen()),
+                ),
+              ),
+              const Divider(height: 1, indent: 56),
+              ListTile(
+                leading: const Icon(Icons.donut_small_outlined),
+                title: const Text('Category budgets'),
+                subtitle: const Text('Monthly limits for each category'),
+                trailing: const Icon(Icons.chevron_right, size: 20),
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => CategoryBudgetsScreen(month: widget.month),
+                  ),
+                ),
+              ),
+              const Divider(height: 1, indent: 56),
+              ListTile(
+                leading: const Icon(Icons.category_outlined),
+                title: const Text('Categories'),
+                subtitle: const Text('Create your own categories'),
+                trailing: const Icon(Icons.chevron_right, size: 20),
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const CategoriesScreen()),
+                ),
+              ),
+              const Divider(height: 1, indent: 56),
+              ListTile(
+                leading: const Icon(Icons.notifications_outlined),
+                title: const Text('Reminders'),
+                subtitle: const Text('Bill and daily notifications'),
+                trailing: const Icon(Icons.chevron_right, size: 20),
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const RemindersScreen()),
+                ),
+              ),
+            ]),
+            _sectionCard('Appearance', [
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: ValueListenableBuilder<ThemeMode>(
+                  valueListenable: ThemeController.instance,
+                  builder: (_, mode, _) => SizedBox(
+                    width: double.infinity,
+                    child: SegmentedButton<ThemeMode>(
+                      showSelectedIcon: false,
+                      segments: const [
+                        ButtonSegment(
+                          value: ThemeMode.system,
+                          label: Text('System'),
+                          icon: Icon(Icons.brightness_auto_outlined),
+                        ),
+                        ButtonSegment(
+                          value: ThemeMode.light,
+                          label: Text('Light'),
+                          icon: Icon(Icons.light_mode_outlined),
+                        ),
+                        ButtonSegment(
+                          value: ThemeMode.dark,
+                          label: Text('Dark'),
+                          icon: Icon(Icons.dark_mode_outlined),
+                        ),
+                      ],
+                      selected: {mode},
+                      onSelectionChanged: (s) =>
+                          ThemeController.instance.setMode(s.first),
+                    ),
+                  ),
+                ),
+              ),
+            ]),
+            _sectionCard('Premium', [
+              ListTile(
+                leading: Icon(
+                  Icons.star_outline_rounded,
+                  color: Theme.of(context).colorScheme.primary,
+                ),
+                title: const Text('Upgrade to Premium'),
+                subtitle: const Text('Unlock bill photo scanning'),
+                trailing: const Icon(Icons.chevron_right, size: 20),
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const PremiumScreen()),
+                ),
+              ),
+              const Divider(height: 1, indent: 56),
+              ListTile(
+                leading: const Icon(Icons.restore_page_outlined),
+                title: const Text('Restore purchase'),
+                trailing: const Icon(Icons.chevron_right, size: 20),
+                onTap: () async {
+                  final messenger = ScaffoldMessenger.of(context);
+                  await PremiumService.instance.restore();
+                  if (!mounted) return;
+                  final premium = await PremiumService.instance.isPremium();
+                  if (!mounted) return;
+                  messenger.showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        premium
+                            ? 'Premium restored!'
+                            : 'No previous purchase found.',
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ]),
           ],
         ),
       ),

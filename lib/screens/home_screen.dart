@@ -1,13 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+
 import '../db/database_helper.dart';
 import '../models/category_budget.dart';
 import '../models/expense.dart';
 import '../models/expense_category.dart';
+import '../models/favourite.dart';
 import '../models/income.dart';
 import '../services/reminder_service.dart';
 import 'add_expense_screen.dart';
+import 'calendar_screen.dart';
 import 'category_budgets_screen.dart';
+import 'favourites_screen.dart';
 import 'income_screen.dart';
 import 'reports_screen.dart';
 import 'savings_goals_screen.dart';
@@ -29,8 +33,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   List<Expense> expenses = [];
   double? budget;
   List<CategoryBudgetStatus> categoryAlerts = [];
-  MonthlyBalance balance =
-      const MonthlyBalance(income: 0, spent: 0, saved: 0);
+  MonthlyBalance balance = const MonthlyBalance(income: 0, spent: 0, saved: 0);
+  List<Favourite> favourites = [];
   String currency = 'Rs.';
   bool loading = true;
 
@@ -59,33 +63,59 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     final b = await db.getBudget(month);
     final limits = await db.getCategoryBudgets();
     final m = await db.monthlyBalance(month);
+    final f = await db.getFavourites();
     final c = await db.getSetting('currency', 'Rs.');
     if (!mounted) return;
     setState(() {
       expenses = e;
       budget = b;
       balance = m;
-      categoryAlerts = CategoryBudgetStatus.summarize(limits, e)
-          .where((s) => s.isOver || s.isNear)
-          .toList();
+      favourites = f;
+      categoryAlerts = CategoryBudgetStatus.summarize(
+        limits,
+        e,
+      ).where((s) => s.isOver || s.isNear).toList();
       currency = c;
       loading = false;
     });
     if (posted > 0) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(posted == 1
-            ? 'Added 1 recurring expense'
-            : 'Added $posted recurring expenses'),
-      ));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            posted == 1
+                ? 'Added 1 recurring entry'
+                : 'Added $posted recurring entries',
+          ),
+        ),
+      );
     }
     await ReminderService.instance.sync();
   }
 
-  Future<void> _openAndReload(Widget screen) async {
-    await Navigator.push(
-      context,
-      MaterialPageRoute(builder: (_) => screen),
+  Future<void> _quickAdd(Favourite f) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final id = await db.addFavouriteExpense(f, DateTime.now());
+    // Show the month the expense went into.
+    final now = DateTime.now();
+    month = DateTime(now.year, now.month);
+    await _load();
+    messenger.hideCurrentSnackBar();
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text('Added ${f.label}, $currency ${money.format(f.amount)}'),
+        action: SnackBarAction(
+          label: 'Undo',
+          onPressed: () async {
+            await db.deleteExpense(id);
+            _load();
+          },
+        ),
+      ),
     );
+  }
+
+  Future<void> _openAndReload(Widget screen) async {
+    await Navigator.push(context, MaterialPageRoute(builder: (_) => screen));
     _load();
   }
 
@@ -105,27 +135,31 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   Future<bool?> _confirmDelete() => showDialog<bool>(
-        context: context,
-        builder: (c) => AlertDialog(
-          title: const Text('Delete this expense?'),
-          actions: [
-            TextButton(
-                onPressed: () => Navigator.pop(c, false),
-                child: const Text('Cancel')),
-            TextButton(
-                onPressed: () => Navigator.pop(c, true),
-                child: const Text('Delete')),
-          ],
+    context: context,
+    builder: (c) => AlertDialog(
+      title: const Text('Delete this expense?'),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(c, false),
+          child: const Text('Cancel'),
         ),
-      );
+        TextButton(
+          onPressed: () => Navigator.pop(c, true),
+          child: const Text('Delete'),
+        ),
+      ],
+    ),
+  );
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Budgie',
-            style: TextStyle(fontWeight: FontWeight.bold)),
+        title: const Text(
+          'Budgie',
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
         actions: [
           IconButton(
             icon: const Icon(Icons.search_rounded),
@@ -134,10 +168,18 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               await Navigator.push(
                 context,
                 MaterialPageRoute(
-                    builder: (_) => SearchScreen(currency: currency)),
+                  builder: (_) => SearchScreen(currency: currency),
+                ),
               );
               _load();
             },
+          ),
+          IconButton(
+            icon: const Icon(Icons.calendar_month_outlined),
+            tooltip: 'Calendar',
+            onPressed: () => _openAndReload(
+              CalendarScreen(month: month, currency: currency),
+            ),
           ),
           IconButton(
             icon: const Icon(Icons.pie_chart_outline_rounded),
@@ -145,8 +187,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             onPressed: () => Navigator.push(
               context,
               MaterialPageRoute(
-                builder: (_) =>
-                    ReportsScreen(month: month, currency: currency),
+                builder: (_) => ReportsScreen(month: month, currency: currency),
               ),
             ),
           ),
@@ -156,8 +197,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             onPressed: () async {
               await Navigator.push<bool>(
                 context,
-                MaterialPageRoute(
-                    builder: (_) => SettingsScreen(month: month)),
+                MaterialPageRoute(builder: (_) => SettingsScreen(month: month)),
               );
               _load();
             },
@@ -176,6 +216,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 _monthBar(cs),
                 _budgetCard(cs),
                 _balanceCard(cs),
+                if (favourites.isNotEmpty) _quickAddRow(cs),
                 if (categoryAlerts.isNotEmpty) _categoryAlert(cs),
                 Expanded(child: _expenseList(cs)),
               ],
@@ -207,7 +248,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   child: Text(
                     DateFormat('MMMM yyyy').format(month),
                     style: const TextStyle(
-                        fontSize: 15, fontWeight: FontWeight.w600),
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                 ),
                 IconButton(
@@ -251,7 +294,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           Text(
             'Total Spent',
             style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.75), fontSize: 13),
+              color: Colors.white.withValues(alpha: 0.75),
+              fontSize: 13,
+            ),
           ),
           const SizedBox(height: 4),
           Text(
@@ -283,17 +328,16 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 Text(
                   'Budget: $currency ${money.format(budget!)}',
                   style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.7),
-                      fontSize: 12),
+                    color: Colors.white.withValues(alpha: 0.7),
+                    fontSize: 12,
+                  ),
                 ),
                 Text(
                   budget! - spent >= 0
                       ? 'Left: $currency ${money.format(budget! - spent)}'
                       : 'Over: $currency ${money.format(spent - budget!)}',
                   style: TextStyle(
-                    color: spent > budget!
-                        ? Colors.red[200]!
-                        : Colors.white,
+                    color: spent > budget! ? Colors.red[200]! : Colors.white,
                     fontSize: 12,
                     fontWeight: FontWeight.w600,
                   ),
@@ -305,8 +349,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             Text(
               'Set a budget in Settings to track your limit',
               style: TextStyle(
-                  color: Colors.white.withValues(alpha: 0.65),
-                  fontSize: 12),
+                color: Colors.white.withValues(alpha: 0.65),
+                fontSize: 12,
+              ),
             ),
           ],
         ],
@@ -322,21 +367,68 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         margin: EdgeInsets.zero,
         child: Row(
           children: [
-            _balanceCell('Income', balance.income, cs.primary,
-                () => _openAndReload(incomeScreen)),
-            _balanceCell('Saved', balance.saved, cs.onSurface,
-                () => _openAndReload(const SavingsGoalsScreen())),
-            _balanceCell('Left', balance.left,
-                balance.left < 0 ? cs.error : cs.onSurface,
-                () => _openAndReload(incomeScreen)),
+            _balanceCell(
+              'Income',
+              balance.income,
+              cs.primary,
+              () => _openAndReload(incomeScreen),
+            ),
+            _balanceCell(
+              'Saved',
+              balance.saved,
+              cs.onSurface,
+              () => _openAndReload(const SavingsGoalsScreen()),
+            ),
+            _balanceCell(
+              'Left',
+              balance.left,
+              balance.left < 0 ? cs.error : cs.onSurface,
+              () => _openAndReload(incomeScreen),
+            ),
           ],
         ),
       ),
     );
   }
 
+  Widget _quickAddRow(ColorScheme cs) {
+    return SizedBox(
+      height: 44,
+      child: ListView(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+        children: [
+          for (final f in favourites)
+            Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: ActionChip(
+                avatar: Icon(
+                  categoryByName(f.category).icon,
+                  size: 18,
+                  color: categoryByName(f.category).color,
+                ),
+                label: Text('${f.label} · ${money.format(f.amount)}'),
+                tooltip: 'Add ${f.label} now',
+                onPressed: () => _quickAdd(f),
+              ),
+            ),
+          ActionChip(
+            avatar: const Icon(Icons.tune, size: 18),
+            label: const Text('Edit'),
+            tooltip: 'Edit quick add',
+            onPressed: () => _openAndReload(const FavouritesScreen()),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _balanceCell(
-      String label, double value, Color color, VoidCallback onTap) {
+    String label,
+    double value,
+    Color color,
+    VoidCallback onTap,
+  ) {
     final sign = value < 0 ? '-' : '';
     return Expanded(
       child: InkWell(
@@ -345,10 +437,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
           child: Column(
             children: [
-              Text(label,
-                  style: TextStyle(
-                      fontSize: 12,
-                      color: Theme.of(context).colorScheme.outline)),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Theme.of(context).colorScheme.outline,
+                ),
+              ),
               const SizedBox(height: 2),
               FittedBox(
                 fit: BoxFit.scaleDown,
@@ -373,8 +468,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     final others = categoryAlerts.length - 1;
     final state = first.isOver ? 'is over budget' : 'is close to its budget';
     final background = first.isOver ? cs.errorContainer : cs.tertiaryContainer;
-    final foreground =
-        first.isOver ? cs.onErrorContainer : cs.onTertiaryContainer;
+    final foreground = first.isOver
+        ? cs.onErrorContainer
+        : cs.onTertiaryContainer;
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
       child: Material(
@@ -386,7 +482,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             await Navigator.push(
               context,
               MaterialPageRoute(
-                  builder: (_) => CategoryBudgetsScreen(month: month)),
+                builder: (_) => CategoryBudgetsScreen(month: month),
+              ),
             );
             _load();
           },
@@ -425,15 +522,19 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.receipt_long_outlined,
-                size: 72, color: cs.outlineVariant),
+            Icon(
+              Icons.receipt_long_outlined,
+              size: 72,
+              color: cs.outlineVariant,
+            ),
             const SizedBox(height: 16),
             Text(
               'No expenses this month',
               style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w500,
-                  color: cs.onSurface),
+                fontSize: 16,
+                fontWeight: FontWeight.w500,
+                color: cs.onSurface,
+              ),
             ),
             const SizedBox(height: 8),
             Text(
@@ -451,8 +552,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       final d = DateTime(e.date.year, e.date.month, e.date.day);
       byDate.putIfAbsent(d, () => []).add(e);
     }
-    final sortedDates = byDate.keys.toList()
-      ..sort((a, b) => b.compareTo(a));
+    final sortedDates = byDate.keys.toList()..sort((a, b) => b.compareTo(a));
 
     return ListView(
       padding: const EdgeInsets.only(bottom: 88),
@@ -474,8 +574,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     return DateFormat('EEEE, d MMM').format(date);
   }
 
-  Widget _dayHeader(
-      DateTime date, List<Expense> dayExpenses, ColorScheme cs) {
+  Widget _dayHeader(DateTime date, List<Expense> dayExpenses, ColorScheme cs) {
     final dayTotal = dayExpenses.fold<double>(0, (s, e) => s + e.amount);
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 12, 20, 4),
@@ -513,8 +612,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           ),
           alignment: Alignment.centerRight,
           padding: const EdgeInsets.only(right: 20),
-          child: Icon(Icons.delete_outline_rounded,
-              color: cs.onErrorContainer),
+          child: Icon(Icons.delete_outline_rounded, color: cs.onErrorContainer),
         ),
       ),
       confirmDismiss: (_) => _confirmDelete(),
@@ -529,8 +627,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           onTap: () => _openForm(e),
           borderRadius: BorderRadius.circular(16),
           child: Padding(
-            padding:
-                const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             child: Row(
               children: [
                 Container(
@@ -555,23 +652,26 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: const TextStyle(
-                                  fontWeight: FontWeight.w500, fontSize: 15),
+                                fontWeight: FontWeight.w500,
+                                fontSize: 15,
+                              ),
                             ),
                           ),
                           if (e.photo != null) ...[
                             const SizedBox(width: 6),
-                            Icon(Icons.photo_outlined,
-                                size: 15,
-                                color: cs.outline,
-                                semanticLabel: 'Has receipt photo'),
+                            Icon(
+                              Icons.photo_outlined,
+                              size: 15,
+                              color: cs.outline,
+                              semanticLabel: 'Has receipt photo',
+                            ),
                           ],
                         ],
                       ),
                       if (e.note.isNotEmpty)
                         Text(
                           e.note,
-                          style:
-                              TextStyle(color: cs.outline, fontSize: 12),
+                          style: TextStyle(color: cs.outline, fontSize: 12),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),

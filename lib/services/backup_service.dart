@@ -1,10 +1,12 @@
 import 'dart:convert';
 import 'dart:io';
+
 import 'package:flutter/foundation.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:googleapis/drive/v3.dart' as drive;
 import 'package:http/http.dart' as http;
 import 'package:sqflite/sqflite.dart';
+
 import '../db/database_helper.dart';
 
 class BackupService {
@@ -40,7 +42,10 @@ class BackupService {
   }
 
   Future<String?> accountEmail() async {
-    final email = await DatabaseHelper.instance.getSetting('google_account', '');
+    final email = await DatabaseHelper.instance.getSetting(
+      'google_account',
+      '',
+    );
     return email.isEmpty ? null : email;
   }
 
@@ -138,8 +143,11 @@ class BackupService {
         if (!data.containsKey(table)) continue;
         await txn.delete(table);
         for (final row in (data[table] as List? ?? [])) {
-          await txn.insert(table, Map<String, dynamic>.from(row as Map),
-              conflictAlgorithm: ConflictAlgorithm.replace);
+          await txn.insert(
+            table,
+            Map<String, dynamic>.from(row as Map),
+            conflictAlgorithm: ConflictAlgorithm.replace,
+          );
         }
       }
     });
@@ -169,6 +177,7 @@ class BackupService {
     'debt_payments',
     'accounts',
     'account_transfers',
+    'favourites',
     'settings',
   ];
 

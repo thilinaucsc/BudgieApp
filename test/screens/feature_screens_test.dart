@@ -1,4 +1,5 @@
 import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
@@ -25,7 +26,8 @@ void main() {
     sqfliteFfiInit();
     databaseFactory = databaseFactoryFfiNoIsolate;
     await databaseFactory.setDatabasesPath(
-        Directory.systemTemp.createTempSync('budgie_screens_').path);
+      Directory.systemTemp.createTempSync('budgie_screens_').path,
+    );
   });
 
   setUp(() async {
@@ -37,8 +39,11 @@ void main() {
     await _db.wipeAll();
   });
 
-  Future<void> pumpScreen(WidgetTester tester, Widget screen,
-      {ThemeData? theme}) async {
+  Future<void> pumpScreen(
+    WidgetTester tester,
+    Widget screen, {
+    ThemeData? theme,
+  }) async {
     tester.view.physicalSize = const Size(1080, 2400);
     tester.view.devicePixelRatio = 3;
     addTearDown(tester.view.reset);
@@ -48,20 +53,24 @@ void main() {
 
   testWidgets('recurring screen shows the empty state', (tester) async {
     await pumpScreen(tester, const RecurringScreen());
-    expect(find.text('No recurring expenses'), findsOneWidget);
+    expect(find.text('Nothing recurring yet'), findsOneWidget);
   });
 
   testWidgets('recurring screen lists an item and pauses it', (tester) async {
     final next = DateTime.now().add(const Duration(days: 5));
     final due = DateTime(next.year, next.month, next.day);
-    await tester.runAsync(() => _db.insertRecurringExpense(RecurringExpense(
+    await tester.runAsync(
+      () => _db.insertRecurringExpense(
+        RecurringExpense(
           amount: 1500,
           category: 'Bills',
           note: 'Internet',
           frequency: RecurringFrequency.monthly,
           startDate: due,
           nextDue: due,
-        )));
+        ),
+      ),
+    );
 
     await pumpScreen(tester, const RecurringScreen());
     expect(find.text('Internet'), findsOneWidget);
@@ -84,8 +93,9 @@ void main() {
     final month = DateTime(2026, 5);
     await tester.runAsync(() async {
       await _db.setCategoryBudget('Food', 100);
-      await _db.insertExpense(Expense(
-          amount: 130, category: 'Food', date: DateTime(2026, 5, 3)));
+      await _db.insertExpense(
+        Expense(amount: 130, category: 'Food', date: DateTime(2026, 5, 3)),
+      );
     });
 
     await pumpScreen(tester, CategoryBudgetsScreen(month: month));
@@ -109,10 +119,22 @@ void main() {
 
   testWidgets('search narrows results as you type', (tester) async {
     await tester.runAsync(() async {
-      await _db.insertExpense(Expense(
-          amount: 10, category: 'Food', date: DateTime(2026, 5, 3), note: 'Tea'));
-      await _db.insertExpense(Expense(
-          amount: 20, category: 'Bills', date: DateTime(2026, 5, 4), note: 'Water'));
+      await _db.insertExpense(
+        Expense(
+          amount: 10,
+          category: 'Food',
+          date: DateTime(2026, 5, 3),
+          note: 'Tea',
+        ),
+      );
+      await _db.insertExpense(
+        Expense(
+          amount: 20,
+          category: 'Bills',
+          date: DateTime(2026, 5, 4),
+          note: 'Water',
+        ),
+      );
     });
 
     await pumpScreen(tester, const SearchScreen(currency: 'Rs.'));
@@ -125,26 +147,29 @@ void main() {
     expect(find.text('Rs. 20.00'), findsNWidgets(2));
   });
 
-  testWidgets('home posts due recurring expenses and warns on budget',
-      (tester) async {
+  testWidgets('home posts due recurring expenses and warns on budget', (
+    tester,
+  ) async {
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
     await tester.runAsync(() async {
       await _db.setCategoryBudget('Bills', 1000);
-      await _db.insertRecurringExpense(RecurringExpense(
-        amount: 1200,
-        category: 'Bills',
-        note: 'Electricity',
-        frequency: RecurringFrequency.monthly,
-        startDate: today,
-        nextDue: today,
-      ));
+      await _db.insertRecurringExpense(
+        RecurringExpense(
+          amount: 1200,
+          category: 'Bills',
+          note: 'Electricity',
+          frequency: RecurringFrequency.monthly,
+          startDate: today,
+          nextDue: today,
+        ),
+      );
     });
 
     await pumpScreen(tester, const HomeScreen());
 
     expect(find.text('Electricity'), findsOneWidget);
-    expect(find.text('Added 1 recurring expense'), findsOneWidget);
+    expect(find.text('Added 1 recurring entry'), findsOneWidget);
     expect(find.text('Bills is over budget'), findsOneWidget);
   });
 
@@ -155,8 +180,11 @@ void main() {
         brightness: Brightness.dark,
       ),
     );
-    await pumpScreen(tester, CategoryBudgetsScreen(month: DateTime(2026, 5)),
-        theme: dark);
+    await pumpScreen(
+      tester,
+      CategoryBudgetsScreen(month: DateTime(2026, 5)),
+      theme: dark,
+    );
     expect(tester.takeException(), isNull);
     expect(find.text('Category budgets'), findsOneWidget);
   });

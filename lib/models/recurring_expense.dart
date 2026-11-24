@@ -7,9 +7,9 @@ enum RecurringFrequency {
   final String label;
 
   static RecurringFrequency fromName(String name) => values.firstWhere(
-        (f) => f.name == name,
-        orElse: () => RecurringFrequency.monthly,
-      );
+    (f) => f.name == name,
+    orElse: () => RecurringFrequency.monthly,
+  );
 }
 
 class RecurringExpense {
@@ -25,6 +25,11 @@ class RecurringExpense {
   final DateTime nextDue;
   final bool active;
 
+  /// Regular income such as a salary. [category] then holds the income
+  /// source, and each payment is added as income instead of an expense.
+  final bool isIncome;
+  final int? accountId;
+
   RecurringExpense({
     this.id,
     required this.amount,
@@ -34,29 +39,35 @@ class RecurringExpense {
     required this.startDate,
     required this.nextDue,
     this.active = true,
+    this.isIncome = false,
+    this.accountId,
   });
 
   Map<String, dynamic> toMap() => {
-        'id': id,
-        'amount': amount,
-        'category': category,
-        'note': note,
-        'frequency': frequency.name,
-        'start_date': startDate.toIso8601String(),
-        'next_due': nextDue.toIso8601String(),
-        'active': active ? 1 : 0,
-      };
+    'id': id,
+    'amount': amount,
+    'category': category,
+    'note': note,
+    'frequency': frequency.name,
+    'start_date': startDate.toIso8601String(),
+    'next_due': nextDue.toIso8601String(),
+    'active': active ? 1 : 0,
+    'kind': isIncome ? 'income' : 'expense',
+    'account_id': accountId,
+  };
 
   factory RecurringExpense.fromMap(Map<String, dynamic> m) => RecurringExpense(
-        id: m['id'] as int?,
-        amount: (m['amount'] as num).toDouble(),
-        category: m['category'] as String,
-        note: (m['note'] ?? '') as String,
-        frequency: RecurringFrequency.fromName(m['frequency'] as String),
-        startDate: DateTime.parse(m['start_date'] as String),
-        nextDue: DateTime.parse(m['next_due'] as String),
-        active: (m['active'] as int) == 1,
-      );
+    id: m['id'] as int?,
+    amount: (m['amount'] as num).toDouble(),
+    category: m['category'] as String,
+    note: (m['note'] ?? '') as String,
+    frequency: RecurringFrequency.fromName(m['frequency'] as String),
+    startDate: DateTime.parse(m['start_date'] as String),
+    nextDue: DateTime.parse(m['next_due'] as String),
+    active: (m['active'] as int) == 1,
+    isIncome: m['kind'] == 'income',
+    accountId: m['account_id'] as int?,
+  );
 
   RecurringExpense copyWith({DateTime? nextDue, bool? active}) =>
       RecurringExpense(
@@ -68,6 +79,8 @@ class RecurringExpense {
         startDate: startDate,
         nextDue: nextDue ?? this.nextDue,
         active: active ?? this.active,
+        isIncome: isIncome,
+        accountId: accountId,
       );
 
   /// The scheduled date that follows [current].
@@ -76,15 +89,18 @@ class RecurringExpense {
       case RecurringFrequency.weekly:
         return DateTime(current.year, current.month, current.day + 7);
       case RecurringFrequency.monthly:
-        final months = (current.year - startDate.year) * 12 +
+        final months =
+            (current.year - startDate.year) * 12 +
             current.month -
             startDate.month +
             1;
         return _clampedDate(
-            startDate.year, startDate.month + months, startDate.day);
+          startDate.year,
+          startDate.month + months,
+          startDate.day,
+        );
       case RecurringFrequency.yearly:
-        return _clampedDate(
-            current.year + 1, startDate.month, startDate.day);
+        return _clampedDate(current.year + 1, startDate.month, startDate.day);
     }
   }
 

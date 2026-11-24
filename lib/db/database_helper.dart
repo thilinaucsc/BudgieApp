@@ -1,13 +1,16 @@
 import 'dart:convert';
+
 import 'package:crypto/crypto.dart';
 import 'package:path/path.dart';
 import 'package:sqflite/sqflite.dart';
+
 import '../models/account.dart';
 import '../models/custom_category.dart';
 import '../models/debt.dart';
 import '../models/expense.dart';
 import '../models/expense_category.dart';
 import '../models/expense_filter.dart';
+import '../models/favourite.dart';
 import '../models/household_item.dart';
 import '../models/income.dart';
 import '../models/recurring_expense.dart';
@@ -32,7 +35,7 @@ class DatabaseHelper {
     final path = join(await getDatabasesPath(), 'expenses.db');
     return openDatabase(
       path,
-      version: 7,
+      version: 8,
       onCreate: (db, version) async {
         await db.execute('''
           CREATE TABLE expenses(
@@ -93,6 +96,7 @@ class DatabaseHelper {
         await _createMoneyTables(db);
         await _createDebtTables(db);
         await _createAccountTables(db);
+        await _createFavouriteTables(db);
       },
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 2) {
@@ -151,12 +155,42 @@ class DatabaseHelper {
           await _addColumnIfMissing(db, 'income', 'account_id', 'INTEGER');
           await _createAccountTables(db);
         }
+        if (oldVersion < 8) {
+          await _addColumnIfMissing(
+            db,
+            'recurring_expenses',
+            'kind',
+            "TEXT NOT NULL DEFAULT 'expense'",
+          );
+          await _addColumnIfMissing(
+            db,
+            'recurring_expenses',
+            'account_id',
+            'INTEGER',
+          );
+          await _createFavouriteTables(db);
+        }
       },
     );
   }
 
+  Future<void> _createFavouriteTables(Database db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS favourites(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        amount REAL NOT NULL,
+        category TEXT NOT NULL,
+        note TEXT NOT NULL DEFAULT '',
+        account_id INTEGER
+      )''');
+  }
+
   Future<void> _addColumnIfMissing(
-      Database db, String table, String column, String type) async {
+    Database db,
+    String table,
+    String column,
+    String type,
+  ) async {
     final columns = await db.rawQuery('PRAGMA table_info($table)');
     // No columns means no table; it is created later with the column.
     if (columns.isEmpty || columns.any((c) => c['name'] == column)) return;
@@ -245,7 +279,9 @@ class DatabaseHelper {
         frequency TEXT NOT NULL,
         start_date TEXT NOT NULL,
         next_due TEXT NOT NULL,
-        active INTEGER NOT NULL DEFAULT 1
+        active INTEGER NOT NULL DEFAULT 1,
+        kind TEXT NOT NULL DEFAULT 'expense',
+        account_id INTEGER
       )''');
     await db.execute('''
       CREATE TABLE IF NOT EXISTS category_budgets(
@@ -269,10 +305,17 @@ class DatabaseHelper {
   /// Deletes the expense and its receipt photo.
   Future<int> deleteExpense(int id) async {
     final db = await database;
-    final rows = await db.query('expenses',
-        columns: ['photo'], where: 'id = ?', whereArgs: [id]);
-    final deleted =
-        await db.delete('expenses', where: 'id = ?', whereArgs: [id]);
+    final rows = await db.query(
+      'expenses',
+      columns: ['photo'],
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+    final deleted = await db.delete(
+      'expenses',
+      where: 'id = ?',
+      whereArgs: [id],
+    );
     if (rows.isNotEmpty) {
       await ReceiptPhotos.instance.delete(rows.first['photo'] as String?);
     }
@@ -338,8 +381,12 @@ class DatabaseHelper {
 
   Future<int> updateAccount(Account account) async {
     final db = await database;
-    return db.update('accounts', account.toMap(),
-        where: 'id = ?', whereArgs: [account.id]);
+    return db.update(
+      'accounts',
+      account.toMap(),
+      where: 'id = ?',
+      whereArgs: [account.id],
+    );
   }
 
   /// Deletes the account and its transfers. Its expenses and income are kept
@@ -347,12 +394,24 @@ class DatabaseHelper {
   Future<void> deleteAccount(int id) async {
     final db = await database;
     await db.transaction((txn) async {
-      for (final table in const ['expenses', 'income']) {
-        await txn.update(table, {'account_id': null},
-            where: 'account_id = ?', whereArgs: [id]);
+      for (final table in const [
+        'expenses',
+        'income',
+        'recurring_expenses',
+        'favourites',
+      ]) {
+        await txn.update(
+          table,
+          {'account_id': null},
+          where: 'account_id = ?',
+          whereArgs: [id],
+        );
       }
-      await txn.delete('account_transfers',
-          where: 'from_account = ? OR to_account = ?', whereArgs: [id, id]);
+      await txn.delete(
+        'account_transfers',
+        where: 'from_account = ? OR to_account = ?',
+        whereArgs: [id, id],
+      );
       await txn.delete('accounts', where: 'id = ?', whereArgs: [id]);
     });
   }
@@ -383,15 +442,18 @@ class DatabaseHelper {
   }
 
   /// Everything that moved money in or out of the account, newest first.
-  Future<List<AccountActivity>> accountActivity(int accountId,
-      {int limit = 200}) async {
+  Future<List<AccountActivity>> accountActivity(
+    int accountId, {
+    int limit = 200,
+  }) async {
     final db = await database;
-    final names = {
-      for (final a in await getAccounts()) a.id: a.name,
-    };
+    final names = {for (final a in await getAccounts()) a.id: a.name};
     final activity = <AccountActivity>[
-      for (final r in await db.query('expenses',
-          where: 'account_id = ?', whereArgs: [accountId]))
+      for (final r in await db.query(
+        'expenses',
+        where: 'account_id = ?',
+        whereArgs: [accountId],
+      ))
         AccountActivity(
           kind: ActivityKind.expense,
           id: r['id'] as int,
@@ -400,8 +462,11 @@ class DatabaseHelper {
           note: (r['note'] ?? '') as String,
           amount: -(r['amount'] as num).toDouble(),
         ),
-      for (final r in await db.query('income',
-          where: 'account_id = ?', whereArgs: [accountId]))
+      for (final r in await db.query(
+        'income',
+        where: 'account_id = ?',
+        whereArgs: [accountId],
+      ))
         AccountActivity(
           kind: ActivityKind.income,
           id: r['id'] as int,
@@ -410,9 +475,11 @@ class DatabaseHelper {
           note: (r['note'] ?? '') as String,
           amount: (r['amount'] as num).toDouble(),
         ),
-      for (final r in await db.query('account_transfers',
-          where: 'from_account = ? OR to_account = ?',
-          whereArgs: [accountId, accountId]))
+      for (final r in await db.query(
+        'account_transfers',
+        where: 'from_account = ? OR to_account = ?',
+        whereArgs: [accountId, accountId],
+      ))
         if (r['to_account'] == accountId)
           AccountActivity(
             kind: ActivityKind.transferIn,
@@ -433,6 +500,65 @@ class DatabaseHelper {
           ),
     ]..sort((a, b) => b.date.compareTo(a.date));
     return activity.take(limit).toList();
+  }
+
+  // ---------- Quick-add Favourites ----------
+  Future<List<Favourite>> getFavourites() async {
+    final db = await database;
+    final rows = await db.query('favourites', orderBy: 'id ASC');
+    return rows.map(Favourite.fromMap).toList();
+  }
+
+  Future<int> insertFavourite(Favourite f) async {
+    final db = await database;
+    return db.insert('favourites', f.toMap()..remove('id'));
+  }
+
+  Future<int> updateFavourite(Favourite f) async {
+    final db = await database;
+    return db.update(
+      'favourites',
+      f.toMap(),
+      where: 'id = ?',
+      whereArgs: [f.id],
+    );
+  }
+
+  Future<int> deleteFavourite(int id) async {
+    final db = await database;
+    return db.delete('favourites', where: 'id = ?', whereArgs: [id]);
+  }
+
+  /// Records [f] as an expense at [now] and returns the new expense's id.
+  Future<int> addFavouriteExpense(Favourite f, DateTime now) async {
+    final db = await database;
+    final account = f.accountId == null
+        ? const <Map<String, Object?>>[]
+        : await db.query(
+            'accounts',
+            columns: ['id'],
+            where: 'id = ?',
+            whereArgs: [f.accountId],
+          );
+    return insertExpense(
+      f.toExpense(now, accountId: account.isEmpty ? null : f.accountId),
+    );
+  }
+
+  // ---------- Calendar ----------
+  Future<Map<int, double>> dailyTotals(DateTime month) async {
+    final db = await database;
+    final start = DateTime(month.year, month.month, 1);
+    final end = DateTime(month.year, month.month + 1, 1);
+    final rows = await db.rawQuery(
+      'SELECT CAST(substr(date, 9, 2) AS INTEGER) AS day, '
+      'SUM(amount) AS total FROM expenses '
+      'WHERE date >= ? AND date < ? GROUP BY day',
+      [start.toIso8601String(), end.toIso8601String()],
+    );
+    return {
+      for (final r in rows) r['day'] as int: (r['total'] as num).toDouble(),
+    };
   }
 
   // ---------- Shopping ----------
@@ -461,8 +587,7 @@ class DatabaseHelper {
             date: date ?? DateTime.now(),
             note: 'Bought ${item.name}',
             accountId: accountId,
-          ).toMap()
-            ..remove('id'),
+          ).toMap()..remove('id'),
         );
       }
     });
@@ -485,7 +610,8 @@ class DatabaseHelper {
   Future<List<String>> debtPeople() async {
     final db = await database;
     final rows = await db.rawQuery(
-        'SELECT DISTINCT person FROM debts ORDER BY person COLLATE NOCASE');
+      'SELECT DISTINCT person FROM debts ORDER BY person COLLATE NOCASE',
+    );
     return rows.map((r) => r['person'] as String).toList();
   }
 
@@ -496,8 +622,12 @@ class DatabaseHelper {
 
   Future<int> updateDebt(Debt debt) async {
     final db = await database;
-    return db.update('debts', debt.toMap(),
-        where: 'id = ?', whereArgs: [debt.id]);
+    return db.update(
+      'debts',
+      debt.toMap(),
+      where: 'id = ?',
+      whereArgs: [debt.id],
+    );
   }
 
   Future<void> deleteDebt(int id) async {
@@ -531,7 +661,8 @@ class DatabaseHelper {
         [payment.debtId],
       );
       if (rows.isEmpty) return false;
-      final remaining = (rows.first['amount'] as num).toDouble() -
+      final remaining =
+          (rows.first['amount'] as num).toDouble() -
           (rows.first['paid'] as num).toDouble();
       if (payment.amount > remaining + 0.005) return false;
       await txn.insert('debt_payments', payment.toMap()..remove('id'));
@@ -572,8 +703,10 @@ class DatabaseHelper {
   // ---------- Recurring Expenses ----------
   Future<List<RecurringExpense>> getRecurringExpenses() async {
     final db = await database;
-    final rows = await db.query('recurring_expenses',
-        orderBy: 'active DESC, next_due ASC, id ASC');
+    final rows = await db.query(
+      'recurring_expenses',
+      orderBy: 'active DESC, next_due ASC, id ASC',
+    );
     return rows.map(RecurringExpense.fromMap).toList();
   }
 
@@ -585,8 +718,12 @@ class DatabaseHelper {
 
   Future<int> updateRecurringExpense(RecurringExpense r) async {
     final db = await database;
-    return db.update('recurring_expenses', r.toMap(),
-        where: 'id = ?', whereArgs: [r.id]);
+    return db.update(
+      'recurring_expenses',
+      r.toMap(),
+      where: 'id = ?',
+      whereArgs: [r.id],
+    );
   }
 
   Future<int> deleteRecurringExpense(int id) async {
@@ -605,27 +742,43 @@ class DatabaseHelper {
         where: 'active = 1 AND next_due <= ?',
         whereArgs: [today.toIso8601String()],
       );
+      final accountIds = {
+        for (final a in await txn.query('accounts', columns: ['id']))
+          a['id'] as int,
+      };
       var posted = 0;
       for (final row in rows) {
         final recurring = RecurringExpense.fromMap(row);
         final due = recurring.dueDates(now);
         if (due.isEmpty) continue;
+        final accountId = accountIds.contains(recurring.accountId)
+            ? recurring.accountId
+            : null;
         for (final date in due) {
-          final expense = Expense(
-            amount: recurring.amount,
-            category: recurring.category,
-            date: date,
-            note: recurring.note,
-          );
-          await txn.insert('expenses', expense.toMap()..remove('id'));
+          if (recurring.isIncome) {
+            final income = Income(
+              amount: recurring.amount,
+              source: recurring.category,
+              date: date,
+              note: recurring.note,
+              accountId: accountId,
+            );
+            await txn.insert('income', income.toMap()..remove('id'));
+          } else {
+            final expense = Expense(
+              amount: recurring.amount,
+              category: recurring.category,
+              date: date,
+              note: recurring.note,
+              accountId: accountId,
+            );
+            await txn.insert('expenses', expense.toMap()..remove('id'));
+          }
           posted++;
         }
         await txn.update(
           'recurring_expenses',
-          {
-            'next_due':
-                recurring.occurrenceAfter(due.last).toIso8601String(),
-          },
+          {'next_due': recurring.occurrenceAfter(due.last).toIso8601String()},
           where: 'id = ?',
           whereArgs: [recurring.id],
         );
@@ -646,24 +799,33 @@ class DatabaseHelper {
 
   Future<void> setCategoryBudget(String category, double amount) async {
     final db = await database;
-    await db.insert(
-      'category_budgets',
-      {'category': category, 'limit_amount': amount},
-      conflictAlgorithm: ConflictAlgorithm.replace,
-    );
+    await db.insert('category_budgets', {
+      'category': category,
+      'limit_amount': amount,
+    }, conflictAlgorithm: ConflictAlgorithm.replace);
   }
 
   Future<void> deleteCategoryBudget(String category) async {
     final db = await database;
-    await db.delete('category_budgets',
-        where: 'category = ?', whereArgs: [category]);
+    await db.delete(
+      'category_budgets',
+      where: 'category = ?',
+      whereArgs: [category],
+    );
   }
+
+  // Recurring income keeps its source in the category column, so a custom
+  // category named like a source must not touch it.
+  static String _expenseRowsOnly(String table) =>
+      table == 'recurring_expenses' ? "kind = 'expense' AND " : '';
 
   // ---------- Custom Categories ----------
   Future<List<CustomCategory>> getCustomCategories() async {
     final db = await database;
-    final rows = await db.query('custom_categories',
-        orderBy: 'name COLLATE NOCASE ASC');
+    final rows = await db.query(
+      'custom_categories',
+      orderBy: 'name COLLATE NOCASE ASC',
+    );
     return rows.map(CustomCategory.fromMap).toList();
   }
 
@@ -684,15 +846,24 @@ class DatabaseHelper {
   Future<void> updateCustomCategory(CustomCategory c, String oldName) async {
     final db = await database;
     await db.transaction((txn) async {
-      await txn.update('custom_categories', c.toMap(),
-          where: 'id = ?', whereArgs: [c.id]);
+      await txn.update(
+        'custom_categories',
+        c.toMap(),
+        where: 'id = ?',
+        whereArgs: [c.id],
+      );
       for (final table in const [
         'expenses',
         'recurring_expenses',
         'category_budgets',
+        'favourites',
       ]) {
-        await txn.update(table, {'category': c.name},
-            where: 'category = ?', whereArgs: [oldName]);
+        await txn.update(
+          table,
+          {'category': c.name},
+          where: '${_expenseRowsOnly(table)}category = ?',
+          whereArgs: [oldName],
+        );
       }
     });
     await loadCustomCategories();
@@ -702,14 +873,24 @@ class DatabaseHelper {
   Future<void> deleteCustomCategory(CustomCategory c) async {
     final db = await database;
     await db.transaction((txn) async {
-      for (final table in const ['expenses', 'recurring_expenses']) {
-        await txn.update(table, {'category': fallbackCategoryName},
-            where: 'category = ?', whereArgs: [c.name]);
+      for (final table in const [
+        'expenses',
+        'recurring_expenses',
+        'favourites',
+      ]) {
+        await txn.update(
+          table,
+          {'category': fallbackCategoryName},
+          where: '${_expenseRowsOnly(table)}category = ?',
+          whereArgs: [c.name],
+        );
       }
-      await txn.delete('category_budgets',
-          where: 'category = ?', whereArgs: [c.name]);
-      await txn.delete('custom_categories',
-          where: 'id = ?', whereArgs: [c.id]);
+      await txn.delete(
+        'category_budgets',
+        where: 'category = ?',
+        whereArgs: [c.name],
+      );
+      await txn.delete('custom_categories', where: 'id = ?', whereArgs: [c.id]);
     });
     await loadCustomCategories();
   }
@@ -735,8 +916,12 @@ class DatabaseHelper {
 
   Future<int> updateIncome(Income income) async {
     final db = await database;
-    return db.update('income', income.toMap(),
-        where: 'id = ?', whereArgs: [income.id]);
+    return db.update(
+      'income',
+      income.toMap(),
+      where: 'id = ?',
+      whereArgs: [income.id],
+    );
   }
 
   Future<int> deleteIncome(int id) async {
@@ -785,15 +970,22 @@ class DatabaseHelper {
 
   Future<int> updateSavingsGoal(SavingsGoal goal) async {
     final db = await database;
-    return db.update('savings_goals', goal.toMap(),
-        where: 'id = ?', whereArgs: [goal.id]);
+    return db.update(
+      'savings_goals',
+      goal.toMap(),
+      where: 'id = ?',
+      whereArgs: [goal.id],
+    );
   }
 
   Future<void> deleteSavingsGoal(int id) async {
     final db = await database;
     await db.transaction((txn) async {
-      await txn.delete('savings_contributions',
-          where: 'goal_id = ?', whereArgs: [id]);
+      await txn.delete(
+        'savings_contributions',
+        where: 'goal_id = ?',
+        whereArgs: [id],
+      );
       await txn.delete('savings_goals', where: 'id = ?', whereArgs: [id]);
     });
   }
@@ -837,8 +1029,11 @@ class DatabaseHelper {
     return db.transaction((txn) async {
       final balance = await _goalBalance(txn, c.goalId);
       if (balance - c.amount < -0.005) return false;
-      await txn.delete('savings_contributions',
-          where: 'id = ?', whereArgs: [c.id]);
+      await txn.delete(
+        'savings_contributions',
+        where: 'id = ?',
+        whereArgs: [c.id],
+      );
       return true;
     });
   }
@@ -864,11 +1059,10 @@ class DatabaseHelper {
 
   Future<void> setBudget(DateTime month, double amount) async {
     final db = await database;
-    await db.insert(
-      'budgets',
-      {'month': monthKey(month), 'limit_amount': amount},
-      conflictAlgorithm: ConflictAlgorithm.replace,
-    );
+    await db.insert('budgets', {
+      'month': monthKey(month),
+      'limit_amount': amount,
+    }, conflictAlgorithm: ConflictAlgorithm.replace);
   }
 
   // ---------- Household Items ----------
@@ -886,8 +1080,12 @@ class DatabaseHelper {
 
   Future<int> updateItem(HouseholdItem item) async {
     final db = await database;
-    return db.update('household_items', item.toMap(),
-        where: 'id = ?', whereArgs: [item.id]);
+    return db.update(
+      'household_items',
+      item.toMap(),
+      where: 'id = ?',
+      whereArgs: [item.id],
+    );
   }
 
   Future<int> deleteItem(int id) async {
@@ -910,11 +1108,10 @@ class DatabaseHelper {
 
   Future<void> setSetting(String key, String value) async {
     final db = await database;
-    await db.insert(
-      'settings',
-      {'key': key, 'value': value},
-      conflictAlgorithm: ConflictAlgorithm.replace,
-    );
+    await db.insert('settings', {
+      'key': key,
+      'value': value,
+    }, conflictAlgorithm: ConflictAlgorithm.replace);
   }
 
   Future<void> wipeAll() async {
@@ -936,8 +1133,7 @@ class DatabaseHelper {
 
   Future<List<SplitterTrip>> getAllSplitterTrips() async {
     final db = await database;
-    final rows =
-        await db.query('splitter_trips', orderBy: 'created_at DESC');
+    final rows = await db.query('splitter_trips', orderBy: 'created_at DESC');
     return rows.map(SplitterTrip.fromMap).toList();
   }
 
@@ -953,12 +1149,19 @@ class DatabaseHelper {
       if (expenseRows.isNotEmpty) {
         final ids = expenseRows.map((r) => r['id']).join(',');
         await txn.rawDelete(
-            'DELETE FROM splitter_expense_shares WHERE expense_id IN ($ids)');
+          'DELETE FROM splitter_expense_shares WHERE expense_id IN ($ids)',
+        );
       }
-      await txn.delete('splitter_expenses',
-          where: 'trip_id = ?', whereArgs: [id]);
-      await txn.delete('splitter_participants',
-          where: 'trip_id = ?', whereArgs: [id]);
+      await txn.delete(
+        'splitter_expenses',
+        where: 'trip_id = ?',
+        whereArgs: [id],
+      );
+      await txn.delete(
+        'splitter_participants',
+        where: 'trip_id = ?',
+        whereArgs: [id],
+      );
       await txn.delete('splitter_trips', where: 'id = ?', whereArgs: [id]);
     });
   }
@@ -1016,26 +1219,32 @@ class DatabaseHelper {
         where: 'expense_id = ?',
         whereArgs: [expense.id],
       );
-      final shareIds =
-          shareRows.map((r) => r['participant_id'] as int).toList();
-      result.add(SplitterExpense(
-        id: expense.id,
-        tripId: expense.tripId,
-        payerId: expense.payerId,
-        amount: expense.amount,
-        note: expense.note,
-        date: expense.date,
-        payerName: row['payer_name'] as String,
-        shareParticipantIds: shareIds,
-      ));
+      final shareIds = shareRows
+          .map((r) => r['participant_id'] as int)
+          .toList();
+      result.add(
+        SplitterExpense(
+          id: expense.id,
+          tripId: expense.tripId,
+          payerId: expense.payerId,
+          amount: expense.amount,
+          note: expense.note,
+          date: expense.date,
+          payerName: row['payer_name'] as String,
+          shareParticipantIds: shareIds,
+        ),
+      );
     }
     return result;
   }
 
   Future<void> deleteSplitterExpense(int id) async {
     final db = await database;
-    await db.delete('splitter_expense_shares',
-        where: 'expense_id = ?', whereArgs: [id]);
+    await db.delete(
+      'splitter_expense_shares',
+      where: 'expense_id = ?',
+      whereArgs: [id],
+    );
     await db.delete('splitter_expenses', where: 'id = ?', whereArgs: [id]);
   }
 

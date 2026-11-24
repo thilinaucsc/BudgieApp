@@ -1,10 +1,13 @@
 import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
+
 import '../db/database_helper.dart';
 import '../models/account.dart';
 import '../models/expense.dart';
+import '../models/favourite.dart';
 import '../models/expense_category.dart';
 import '../services/gemini_service.dart';
 import '../services/mlkit_service.dart';
@@ -46,8 +49,7 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
   void initState() {
     super.initState();
     final e = widget.expense;
-    _amount =
-        TextEditingController(text: e == null ? '' : e.amount.toString());
+    _amount = TextEditingController(text: e == null ? '' : e.amount.toString());
     _note = TextEditingController(text: e?.note ?? '');
     _category = e?.category ?? categories.first.name;
     _date = e?.date ?? DateTime.now();
@@ -78,20 +80,22 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
   Future<void> _attachPhoto() async {
     final source = await _pickSource();
     if (source == null || !mounted) return;
-    final picked = await ImagePicker()
-        .pickImage(source: source, maxWidth: 1600, imageQuality: 75);
+    final picked = await ImagePicker().pickImage(
+      source: source,
+      maxWidth: 1600,
+      imageQuality: 75,
+    );
     if (picked == null || !mounted) return;
     setState(() => _newPhoto = File(picked.path));
   }
 
   void _removePhoto() => setState(() {
-        _newPhoto = null;
-        _photoRemoved = true;
-      });
+    _newPhoto = null;
+    _photoRemoved = true;
+  });
 
   Future<void> _loadCurrency() async {
-    final c =
-        await DatabaseHelper.instance.getSetting('currency', 'Rs.');
+    final c = await DatabaseHelper.instance.getSetting('currency', 'Rs.');
     if (mounted) setState(() => _currency = c);
   }
 
@@ -157,8 +161,7 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
     final db = DatabaseHelper.instance;
     final key = await db.getSetting('gemini_api_key', '');
     final result = key.isNotEmpty
-        ? await GeminiService(apiKey: key)
-            .extractFromReceipt(File(picked.path))
+        ? await GeminiService(apiKey: key).extractFromReceipt(File(picked.path))
         : await MlKitService().extractFromReceipt(File(picked.path));
     if (!mounted) return;
     setState(() => _scanning = false);
@@ -166,7 +169,8 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text(
-              'Could not read bill — try better lighting or a clearer photo.'),
+            'Could not read bill — try better lighting or a clearer photo.',
+          ),
           duration: Duration(seconds: 4),
         ),
       );
@@ -182,6 +186,22 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
       if (result.category != null) _category = result.category!;
       if (result.note != null) _note.text = result.note!;
     });
+  }
+
+  Future<void> _saveFavourite() async {
+    if (!_formKey.currentState!.validate()) return;
+    final messenger = ScaffoldMessenger.of(context);
+    await DatabaseHelper.instance.insertFavourite(
+      Favourite(
+        amount: double.parse(_amount.text.trim()),
+        category: _category,
+        note: _note.text.trim(),
+        accountId: _accountId,
+      ),
+    );
+    messenger.showSnackBar(
+      const SnackBar(content: Text('Saved to quick add on the home screen')),
+    );
   }
 
   Future<void> _save() async {
@@ -218,13 +238,19 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
       appBar: AppBar(
         title: Text(isEdit ? 'Edit expense' : 'Add expense'),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.bolt_outlined),
+            tooltip: 'Save to quick add',
+            onPressed: _saveFavourite,
+          ),
           if (_scanning)
             const Padding(
               padding: EdgeInsets.all(14),
               child: SizedBox(
-                  width: 20,
-                  height: 20,
-                  child: CircularProgressIndicator(strokeWidth: 2)),
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
             )
           else
             IconButton(
@@ -242,8 +268,9 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
             TextFormField(
               controller: _amount,
               autofocus: !isEdit,
-              keyboardType:
-                  const TextInputType.numberWithOptions(decimal: true),
+              keyboardType: const TextInputType.numberWithOptions(
+                decimal: true,
+              ),
               decoration: InputDecoration(
                 labelText: 'Amount',
                 prefixText: '$_currency ',
@@ -281,8 +308,7 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
             ],
             TextFormField(
               controller: _note,
-              decoration:
-                  const InputDecoration(labelText: 'Note (optional)'),
+              decoration: const InputDecoration(labelText: 'Note (optional)'),
             ),
             const SizedBox(height: 16),
             _photoSection(cs),
@@ -338,9 +364,7 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
                   c.name,
                   style: TextStyle(
                     fontSize: 10,
-                    fontWeight: selected
-                        ? FontWeight.w700
-                        : FontWeight.normal,
+                    fontWeight: selected ? FontWeight.w700 : FontWeight.normal,
                     color: selected ? c.color : cs.onSurfaceVariant,
                   ),
                   textAlign: TextAlign.center,
@@ -365,7 +389,8 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
         style: OutlinedButton.styleFrom(
           minimumSize: const Size.fromHeight(48),
           shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12)),
+            borderRadius: BorderRadius.circular(12),
+          ),
         ),
       );
     }
@@ -381,7 +406,8 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
             onTap: () => Navigator.push(
               context,
               MaterialPageRoute(
-                  builder: (_) => ReceiptPhotoScreen(file: photo)),
+                builder: (_) => ReceiptPhotoScreen(file: photo),
+              ),
             ),
             child: ClipRRect(
               borderRadius: BorderRadius.circular(8),
@@ -415,22 +441,21 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
   }
 
   Widget _datePicker(ColorScheme cs) {
-    final isToday = DateFormat('yyyyMMdd').format(_date) ==
+    final isToday =
+        DateFormat('yyyyMMdd').format(_date) ==
         DateFormat('yyyyMMdd').format(DateTime.now());
     return InkWell(
       onTap: _pickDate,
       borderRadius: BorderRadius.circular(12),
       child: Container(
-        padding:
-            const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         decoration: BoxDecoration(
           color: cs.surfaceContainerHighest,
           borderRadius: BorderRadius.circular(12),
         ),
         child: Row(
           children: [
-            Icon(Icons.calendar_today_outlined,
-                size: 18, color: cs.primary),
+            Icon(Icons.calendar_today_outlined, size: 18, color: cs.primary),
             const SizedBox(width: 12),
             Expanded(
               child: Text(

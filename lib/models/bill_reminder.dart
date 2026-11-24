@@ -1,4 +1,5 @@
 import 'package:intl/intl.dart';
+
 import 'recurring_expense.dart';
 
 class PlannedReminder {
@@ -25,10 +26,10 @@ const int maxBillReminders = 50;
 const int _occurrencesPerBill = 4;
 
 String _dueLabel(int daysBefore) => switch (daysBefore) {
-      0 => 'due today',
-      1 => 'due tomorrow',
-      _ => 'due in $daysBefore days',
-    };
+  0 => 'due today',
+  1 => 'due tomorrow',
+  _ => 'due in $daysBefore days',
+};
 
 /// The soonest upcoming reminders for active recurring expenses.
 List<PlannedReminder> planBillReminders({
@@ -39,16 +40,21 @@ List<PlannedReminder> planBillReminders({
 }) {
   final money = NumberFormat('#,##0.00');
   final planned = <({DateTime when, String title, String body})>[];
-  for (final bill in recurring.where((r) => r.active)) {
+  for (final bill in recurring.where((r) => r.active && !r.isIncome)) {
     var due = bill.upcomingDue(now);
     for (var i = 0; i < _occurrencesPerBill; i++) {
       final when = DateTime(
-          due.year, due.month, due.day - daysBefore, billReminderHour);
+        due.year,
+        due.month,
+        due.day - daysBefore,
+        billReminderHour,
+      );
       if (when.isAfter(now)) {
         planned.add((
           when: when,
           title: bill.note.isNotEmpty ? bill.note : bill.category,
-          body: '$currency ${money.format(bill.amount)} ${_dueLabel(daysBefore)}',
+          body:
+              '$currency ${money.format(bill.amount)} ${_dueLabel(daysBefore)}',
         ));
       }
       due = bill.occurrenceAfter(due);

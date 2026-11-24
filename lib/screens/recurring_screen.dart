@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+
 import '../db/database_helper.dart';
 import '../models/expense_category.dart';
+import '../models/income.dart';
 import '../models/recurring_expense.dart';
 import 'add_recurring_screen.dart';
 
@@ -58,39 +60,41 @@ class _RecurringScreenState extends State<RecurringScreen> {
   }
 
   Future<bool?> _confirmDelete() => showDialog<bool>(
-        context: context,
-        builder: (c) => AlertDialog(
-          title: const Text('Delete this recurring expense?'),
-          content: const Text('Expenses already added will stay in your list.'),
-          actions: [
-            TextButton(
-                onPressed: () => Navigator.pop(c, false),
-                child: const Text('Cancel')),
-            TextButton(
-                onPressed: () => Navigator.pop(c, true),
-                child: const Text('Delete')),
-          ],
+    context: context,
+    builder: (c) => AlertDialog(
+      title: const Text('Delete this recurring expense?'),
+      content: const Text('Expenses already added will stay in your list.'),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(c, false),
+          child: const Text('Cancel'),
         ),
-      );
+        TextButton(
+          onPressed: () => Navigator.pop(c, true),
+          child: const Text('Delete'),
+        ),
+      ],
+    ),
+  );
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     return Scaffold(
-      appBar: AppBar(title: const Text('Recurring expenses')),
+      appBar: AppBar(title: const Text('Recurring')),
       floatingActionButton: FloatingActionButton(
         onPressed: () => _openForm(),
-        tooltip: 'Add recurring expense',
+        tooltip: 'Add recurring expense or income',
         child: const Icon(Icons.add),
       ),
       body: loading
           ? const Center(child: CircularProgressIndicator())
           : items.isEmpty
-              ? _emptyState(cs)
-              : ListView(
-                  padding: const EdgeInsets.only(top: 8, bottom: 88),
-                  children: [for (final r in items) _item(r, cs)],
-                ),
+          ? _emptyState(cs)
+          : ListView(
+              padding: const EdgeInsets.only(top: 8, bottom: 88),
+              children: [for (final r in items) _item(r, cs)],
+            ),
     );
   }
 
@@ -101,17 +105,20 @@ class _RecurringScreenState extends State<RecurringScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.event_repeat_outlined,
-                size: 72, color: cs.outlineVariant),
+            Icon(
+              Icons.event_repeat_outlined,
+              size: 72,
+              color: cs.outlineVariant,
+            ),
             const SizedBox(height: 16),
             const Text(
-              'No recurring expenses',
+              'Nothing recurring yet',
               style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
             ),
             const SizedBox(height: 8),
             Text(
-              'Add rent, bills or subscriptions once and Budgie records them '
-              'when they are due',
+              'Add rent, bills, subscriptions or your salary once and Budgie '
+              'records them when they are due',
               textAlign: TextAlign.center,
               style: TextStyle(color: cs.outline, fontSize: 14),
             ),
@@ -122,7 +129,13 @@ class _RecurringScreenState extends State<RecurringScreen> {
   }
 
   Widget _item(RecurringExpense r, ColorScheme cs) {
-    final cat = categoryByName(r.category);
+    final cat = r.isIncome
+        ? ExpenseCategory(
+            r.category,
+            incomeSources[r.category] ?? Icons.payments_outlined,
+            cs.primary,
+          )
+        : categoryByName(r.category);
     final title = r.note.isNotEmpty ? r.note : r.category;
     final schedule = r.active
         ? '${r.frequency.label} · Next ${DateFormat('d MMM yyyy').format(r.nextDue)}'
@@ -139,8 +152,7 @@ class _RecurringScreenState extends State<RecurringScreen> {
           ),
           alignment: Alignment.centerRight,
           padding: const EdgeInsets.only(right: 20),
-          child:
-              Icon(Icons.delete_outline_rounded, color: cs.onErrorContainer),
+          child: Icon(Icons.delete_outline_rounded, color: cs.onErrorContainer),
         ),
       ),
       confirmDismiss: (_) => _confirmDelete(),
@@ -176,9 +188,12 @@ class _RecurringScreenState extends State<RecurringScreen> {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
-                            fontWeight: FontWeight.w500, fontSize: 15),
+                          fontWeight: FontWeight.w500,
+                          fontSize: 15,
+                        ),
                       ),
                       Text(
+                        '${r.isIncome ? '+' : ''}'
                         '$currency ${money.format(r.amount)}',
                         style: TextStyle(
                           fontWeight: FontWeight.bold,
@@ -193,10 +208,7 @@ class _RecurringScreenState extends State<RecurringScreen> {
                     ],
                   ),
                 ),
-                Switch(
-                  value: r.active,
-                  onChanged: (v) => _setActive(r, v),
-                ),
+                Switch(value: r.active, onChanged: (v) => _setActive(r, v)),
               ],
             ),
           ),
