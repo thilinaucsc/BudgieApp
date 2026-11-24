@@ -3,12 +3,14 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import '../db/database_helper.dart';
+import '../models/account.dart';
 import '../models/expense.dart';
 import '../models/expense_category.dart';
 import '../services/gemini_service.dart';
 import '../services/mlkit_service.dart';
 import '../services/premium_service.dart';
 import '../services/receipt_photos.dart';
+import 'account_field.dart';
 import 'premium_screen.dart';
 import 'receipt_photo_screen.dart';
 
@@ -28,6 +30,8 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
   late DateTime _date;
   bool _scanning = false;
   String _currency = 'Rs.';
+  List<Account> _accounts = [];
+  int? _accountId;
 
   // The photo saved with this expense, and one picked but not yet saved.
   File? _savedPhoto;
@@ -49,6 +53,21 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
     _date = e?.date ?? DateTime.now();
     _loadCurrency();
     _loadPhoto();
+    _loadAccounts();
+  }
+
+  Future<void> _loadAccounts() async {
+    final db = DatabaseHelper.instance;
+    final accounts = await db.getAccounts();
+    final saved = widget.expense?.accountId;
+    final id = isEdit
+        ? (accounts.any((a) => a.id == saved) ? saved : null)
+        : await db.defaultAccountId(accounts);
+    if (!mounted) return;
+    setState(() {
+      _accounts = accounts;
+      _accountId = id;
+    });
   }
 
   Future<void> _loadPhoto() async {
@@ -178,12 +197,14 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
       date: _date,
       note: _note.text.trim(),
       photo: photo,
+      accountId: _accountId,
     );
     final db = DatabaseHelper.instance;
     if (isEdit) {
       await db.updateExpense(expense);
     } else {
       await db.insertExpense(expense);
+      await db.rememberAccount(_accountId);
     }
     // Only drop the old photo once the expense no longer points to it.
     if (oldPhoto != null && oldPhoto != photo) await photos.delete(oldPhoto);
@@ -249,6 +270,15 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
             const SizedBox(height: 20),
             _datePicker(cs),
             const SizedBox(height: 16),
+            if (_accounts.isNotEmpty) ...[
+              AccountField(
+                accounts: _accounts,
+                value: _accountId,
+                label: 'Paid from',
+                onChanged: (v) => setState(() => _accountId = v),
+              ),
+              const SizedBox(height: 16),
+            ],
             TextFormField(
               controller: _note,
               decoration:

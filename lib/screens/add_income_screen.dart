@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../db/database_helper.dart';
+import '../models/account.dart';
 import '../models/income.dart';
+import 'account_field.dart';
 
 class AddIncomeScreen extends StatefulWidget {
   final Income? income;
@@ -25,8 +27,24 @@ class _AddIncomeScreenState extends State<AddIncomeScreen> {
   late final TextEditingController _note;
   late String _source;
   late DateTime _date;
+  List<Account> _accounts = [];
+  int? _accountId;
 
   bool get isEdit => widget.income != null;
+
+  Future<void> _loadAccounts() async {
+    final db = DatabaseHelper.instance;
+    final accounts = await db.getAccounts();
+    final saved = widget.income?.accountId;
+    final id = isEdit
+        ? (accounts.any((a) => a.id == saved) ? saved : null)
+        : await db.defaultAccountId(accounts);
+    if (!mounted) return;
+    setState(() {
+      _accounts = accounts;
+      _accountId = id;
+    });
+  }
 
   @override
   void initState() {
@@ -37,6 +55,7 @@ class _AddIncomeScreenState extends State<AddIncomeScreen> {
     _note = TextEditingController(text: i?.note ?? '');
     _source = i?.source ?? incomeSources.keys.first;
     _date = i?.date ?? widget.initialDate;
+    _loadAccounts();
   }
 
   @override
@@ -64,12 +83,14 @@ class _AddIncomeScreenState extends State<AddIncomeScreen> {
       source: _source,
       date: _date,
       note: _note.text.trim(),
+      accountId: _accountId,
     );
     final db = DatabaseHelper.instance;
     if (isEdit) {
       await db.updateIncome(income);
     } else {
       await db.insertIncome(income);
+      await db.rememberAccount(_accountId);
     }
     if (mounted) Navigator.pop(context, true);
   }
@@ -153,6 +174,15 @@ class _AddIncomeScreenState extends State<AddIncomeScreen> {
               ),
             ),
             const SizedBox(height: 16),
+            if (_accounts.isNotEmpty) ...[
+              AccountField(
+                accounts: _accounts,
+                value: _accountId,
+                label: 'Paid into',
+                onChanged: (v) => setState(() => _accountId = v),
+              ),
+              const SizedBox(height: 16),
+            ],
             TextFormField(
               controller: _note,
               decoration: const InputDecoration(labelText: 'Note (optional)'),

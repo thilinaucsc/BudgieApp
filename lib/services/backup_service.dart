@@ -167,6 +167,8 @@ class BackupService {
     'custom_categories',
     'debts',
     'debt_payments',
+    'accounts',
+    'account_transfers',
     'settings',
   ];
 

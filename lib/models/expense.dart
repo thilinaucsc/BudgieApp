@@ -8,6 +8,9 @@ class Expense {
   /// File name of the attached receipt photo, kept in the app's own folder.
   final String? photo;
 
+  /// The account the money came from, if accounts are in use.
+  final int? accountId;
+
   Expense({
     this.id,
     required this.amount,
@@ -15,6 +18,7 @@ class Expense {
     required this.date,
     this.note = '',
     this.photo,
+    this.accountId,
   });
 
   Map<String, dynamic> toMap() => {
@@ -24,6 +28,7 @@ class Expense {
         'date': date.toIso8601String(),
         'note': note,
         'photo': photo,
+        'account_id': accountId,
       };
 
   factory Expense.fromMap(Map<String, dynamic> m) => Expense(
@@ -33,5 +38,6 @@ class Expense {
         date: DateTime.parse(m['date'] as String),
         note: (m['note'] ?? '') as String,
         photo: m['photo'] as String?,
+        accountId: m['account_id'] as int?,
       );
 }

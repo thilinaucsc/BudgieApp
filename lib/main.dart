@@ -4,6 +4,7 @@ import 'screens/home_screen.dart';
 import 'screens/household_screen.dart';
 import 'screens/pin_screen.dart';
 import 'screens/trip_list_screen.dart';
+import 'services/app_lock.dart';
 import 'services/backup_service.dart';
 import 'services/premium_service.dart';
 import 'services/theme_controller.dart';
@@ -158,8 +159,34 @@ class _RootScreenState extends State<RootScreen> with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.paused) {
+      _leftAt ??= DateTime.now();
       BackupService.instance.backup();
+    } else if (state == AppLifecycleState.resumed) {
+      _lockIfAway();
     }
+  }
+
+  DateTime? _leftAt;
+  bool _locked = false;
+
+  Future<void> _lockIfAway() async {
+    final leftAt = _leftAt;
+    _leftAt = null;
+    if (_locked) return;
+    final db = DatabaseHelper.instance;
+    if ((await db.getSetting('pin_hash', '')).isEmpty) return;
+    final minutes = AppLock.parse(await db.getSetting(AppLock.settingKey, '0'));
+    if (!mounted ||
+        !AppLock.shouldLock(
+            leftAt: leftAt, now: DateTime.now(), minutes: minutes)) {
+      return;
+    }
+    _locked = true;
+    await Navigator.of(context).push(MaterialPageRoute(
+      fullscreenDialog: true,
+      builder: (_) => const PinScreen(relock: true),
+    ));
+    _locked = false;
   }
 
   Future<void> _refreshLowCount() async {

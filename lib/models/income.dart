@@ -17,12 +17,16 @@ class Income {
   final DateTime date;
   final String note;
 
+  /// The account the money went into, if accounts are in use.
+  final int? accountId;
+
   Income({
     this.id,
     required this.amount,
     required this.source,
     required this.date,
     this.note = '',
+    this.accountId,
   });
 
   Map<String, dynamic> toMap() => {
@@ -31,6 +35,7 @@ class Income {
         'source': source,
         'date': date.toIso8601String(),
         'note': note,
+        'account_id': accountId,
       };
 
   factory Income.fromMap(Map<String, dynamic> m) => Income(
@@ -39,6 +44,7 @@ class Income {
         source: m['source'] as String,
         date: DateTime.parse(m['date'] as String),
         note: (m['note'] ?? '') as String,
+        accountId: m['account_id'] as int?,
       );
 }
 

@@ -9,6 +9,7 @@ import '../db/database_helper.dart';
 import '../models/expense.dart';
 import '../models/expense_category.dart';
 import '../services/csv_export.dart';
+import '../services/pdf_report.dart';
 import 'trends_screen.dart';
 
 class ReportsScreen extends StatefulWidget {
@@ -65,6 +66,37 @@ class _ReportsScreenState extends State<ReportsScreen> {
     }
   }
 
+  Future<void> _exportPdf(BuildContext buttonContext) async {
+    final box = buttonContext.findRenderObject() as RenderBox?;
+    final origin =
+        box == null ? null : box.localToGlobal(Offset.zero) & box.size;
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final db = DatabaseHelper.instance;
+      final bytes = await buildMonthlyReport(MonthlyReportData(
+        month: month,
+        currency: widget.currency,
+        expenses: expenses,
+        balance: await db.monthlyBalance(month),
+        budget: await db.getBudget(month),
+        categoryLimits: await db.getCategoryBudgets(),
+      ));
+      final dir = await getTemporaryDirectory();
+      final name = 'budgie-report-${DateFormat('yyyy-MM').format(month)}.pdf';
+      final file = File('${dir.path}/$name');
+      await file.writeAsBytes(bytes);
+      await Share.shareXFiles(
+        [XFile(file.path, mimeType: 'application/pdf')],
+        sharePositionOrigin: origin,
+      );
+    } catch (e) {
+      debugPrint('ReportsScreen._exportPdf: $e');
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Could not create the PDF report')),
+      );
+    }
+  }
+
   double get total => expenses.fold(0.0, (sum, e) => sum + e.amount);
 
   Map<String, double> get byCategory {
@@ -99,6 +131,13 @@ class _ReportsScreenState extends State<ReportsScreen> {
                 builder: (_) =>
                     TrendsScreen(month: month, currency: widget.currency),
               ),
+            ),
+          ),
+          Builder(
+            builder: (buttonContext) => IconButton(
+              icon: const Icon(Icons.picture_as_pdf_outlined),
+              tooltip: 'Share PDF report',
+              onPressed: () => _exportPdf(buttonContext),
             ),
           ),
           Builder(

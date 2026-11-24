@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:crypto/crypto.dart';
 import 'package:path/path.dart';
 import 'package:sqflite/sqflite.dart';
+import '../models/account.dart';
 import '../models/custom_category.dart';
 import '../models/debt.dart';
 import '../models/expense.dart';
@@ -31,7 +32,7 @@ class DatabaseHelper {
     final path = join(await getDatabasesPath(), 'expenses.db');
     return openDatabase(
       path,
-      version: 6,
+      version: 7,
       onCreate: (db, version) async {
         await db.execute('''
           CREATE TABLE expenses(
@@ -40,7 +41,8 @@ class DatabaseHelper {
             category TEXT NOT NULL,
             date TEXT NOT NULL,
             note TEXT,
-            photo TEXT
+            photo TEXT,
+            account_id INTEGER
           )''');
         await db.execute('''
           CREATE TABLE budgets(
@@ -90,6 +92,7 @@ class DatabaseHelper {
         await _createPlanningTables(db);
         await _createMoneyTables(db);
         await _createDebtTables(db);
+        await _createAccountTables(db);
       },
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 2) {
@@ -141,8 +144,42 @@ class DatabaseHelper {
           await db.execute('ALTER TABLE expenses ADD COLUMN photo TEXT');
           await _createDebtTables(db);
         }
+        if (oldVersion < 7) {
+          // Income may already have the column if version 5 tables were
+          // created during this same upgrade.
+          await _addColumnIfMissing(db, 'expenses', 'account_id', 'INTEGER');
+          await _addColumnIfMissing(db, 'income', 'account_id', 'INTEGER');
+          await _createAccountTables(db);
+        }
       },
     );
+  }
+
+  Future<void> _addColumnIfMissing(
+      Database db, String table, String column, String type) async {
+    final columns = await db.rawQuery('PRAGMA table_info($table)');
+    // No columns means no table; it is created later with the column.
+    if (columns.isEmpty || columns.any((c) => c['name'] == column)) return;
+    await db.execute('ALTER TABLE $table ADD COLUMN $column $type');
+  }
+
+  Future<void> _createAccountTables(Database db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS accounts(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        type TEXT NOT NULL,
+        opening_balance REAL NOT NULL DEFAULT 0
+      )''');
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS account_transfers(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        from_account INTEGER NOT NULL,
+        to_account INTEGER NOT NULL,
+        amount REAL NOT NULL,
+        date TEXT NOT NULL,
+        note TEXT NOT NULL DEFAULT ''
+      )''');
   }
 
   Future<void> _createDebtTables(Database db) async {
@@ -171,7 +208,8 @@ class DatabaseHelper {
         amount REAL NOT NULL,
         source TEXT NOT NULL,
         date TEXT NOT NULL,
-        note TEXT NOT NULL DEFAULT ''
+        note TEXT NOT NULL DEFAULT '',
+        account_id INTEGER
       )''');
     await db.execute('''
       CREATE TABLE IF NOT EXISTS savings_goals(
@@ -271,6 +309,163 @@ class DatabaseHelper {
       for (final r in rows)
         r['category'] as String: (r['total'] as num).toDouble(),
     };
+  }
+
+  // ---------- Accounts ----------
+  static const lastAccountKey = 'last_account_id';
+
+  Future<List<Account>> getAccounts() async {
+    final db = await database;
+    final rows = await db.rawQuery(
+      'SELECT a.*, a.opening_balance'
+      ' + COALESCE((SELECT SUM(amount) FROM income'
+      '     WHERE account_id = a.id), 0)'
+      ' - COALESCE((SELECT SUM(amount) FROM expenses'
+      '     WHERE account_id = a.id), 0)'
+      ' + COALESCE((SELECT SUM(amount) FROM account_transfers'
+      '     WHERE to_account = a.id), 0)'
+      ' - COALESCE((SELECT SUM(amount) FROM account_transfers'
+      '     WHERE from_account = a.id), 0) AS balance '
+      'FROM accounts a ORDER BY a.id',
+    );
+    return rows.map(Account.fromMap).toList();
+  }
+
+  Future<int> insertAccount(Account account) async {
+    final db = await database;
+    return db.insert('accounts', account.toMap()..remove('id'));
+  }
+
+  Future<int> updateAccount(Account account) async {
+    final db = await database;
+    return db.update('accounts', account.toMap(),
+        where: 'id = ?', whereArgs: [account.id]);
+  }
+
+  /// Deletes the account and its transfers. Its expenses and income are kept
+  /// but no longer belong to an account.
+  Future<void> deleteAccount(int id) async {
+    final db = await database;
+    await db.transaction((txn) async {
+      for (final table in const ['expenses', 'income']) {
+        await txn.update(table, {'account_id': null},
+            where: 'account_id = ?', whereArgs: [id]);
+      }
+      await txn.delete('account_transfers',
+          where: 'from_account = ? OR to_account = ?', whereArgs: [id, id]);
+      await txn.delete('accounts', where: 'id = ?', whereArgs: [id]);
+    });
+  }
+
+  /// The account new expenses and income should start with: the one used
+  /// last, or the first account. Null when there are no accounts.
+  Future<int?> defaultAccountId(List<Account> accounts) async {
+    if (accounts.isEmpty) return null;
+    final last = int.tryParse(await getSetting(lastAccountKey, ''));
+    return accounts.any((a) => a.id == last) ? last : accounts.first.id;
+  }
+
+  Future<void> rememberAccount(int? id) async {
+    if (id != null) await setSetting(lastAccountKey, '$id');
+  }
+
+  Future<int> insertTransfer(AccountTransfer transfer) async {
+    if (transfer.fromAccount == transfer.toAccount) {
+      throw ArgumentError('Cannot transfer to the same account');
+    }
+    final db = await database;
+    return db.insert('account_transfers', transfer.toMap()..remove('id'));
+  }
+
+  Future<void> deleteTransfer(int id) async {
+    final db = await database;
+    await db.delete('account_transfers', where: 'id = ?', whereArgs: [id]);
+  }
+
+  /// Everything that moved money in or out of the account, newest first.
+  Future<List<AccountActivity>> accountActivity(int accountId,
+      {int limit = 200}) async {
+    final db = await database;
+    final names = {
+      for (final a in await getAccounts()) a.id: a.name,
+    };
+    final activity = <AccountActivity>[
+      for (final r in await db.query('expenses',
+          where: 'account_id = ?', whereArgs: [accountId]))
+        AccountActivity(
+          kind: ActivityKind.expense,
+          id: r['id'] as int,
+          date: DateTime.parse(r['date'] as String),
+          title: r['category'] as String,
+          note: (r['note'] ?? '') as String,
+          amount: -(r['amount'] as num).toDouble(),
+        ),
+      for (final r in await db.query('income',
+          where: 'account_id = ?', whereArgs: [accountId]))
+        AccountActivity(
+          kind: ActivityKind.income,
+          id: r['id'] as int,
+          date: DateTime.parse(r['date'] as String),
+          title: r['source'] as String,
+          note: (r['note'] ?? '') as String,
+          amount: (r['amount'] as num).toDouble(),
+        ),
+      for (final r in await db.query('account_transfers',
+          where: 'from_account = ? OR to_account = ?',
+          whereArgs: [accountId, accountId]))
+        if (r['to_account'] == accountId)
+          AccountActivity(
+            kind: ActivityKind.transferIn,
+            id: r['id'] as int,
+            date: DateTime.parse(r['date'] as String),
+            title: 'From ${names[r['from_account']] ?? 'deleted account'}',
+            note: (r['note'] ?? '') as String,
+            amount: (r['amount'] as num).toDouble(),
+          )
+        else
+          AccountActivity(
+            kind: ActivityKind.transferOut,
+            id: r['id'] as int,
+            date: DateTime.parse(r['date'] as String),
+            title: 'To ${names[r['to_account']] ?? 'deleted account'}',
+            note: (r['note'] ?? '') as String,
+            amount: -(r['amount'] as num).toDouble(),
+          ),
+    ]..sort((a, b) => b.date.compareTo(a.date));
+    return activity.take(limit).toList();
+  }
+
+  // ---------- Shopping ----------
+  /// Adds bought stock to [item] and, when [cost] is given, records it as an
+  /// expense. Both happen together or not at all.
+  Future<void> recordPurchase(
+    HouseholdItem item,
+    double quantity, {
+    double? cost,
+    String category = 'Groceries',
+    int? accountId,
+    DateTime? date,
+  }) async {
+    final db = await database;
+    await db.transaction((txn) async {
+      await txn.rawUpdate(
+        'UPDATE household_items SET quantity = quantity + ? WHERE id = ?',
+        [quantity, item.id],
+      );
+      if (cost != null && cost > 0) {
+        await txn.insert(
+          'expenses',
+          Expense(
+            amount: cost,
+            category: category,
+            date: date ?? DateTime.now(),
+            note: 'Bought ${item.name}',
+            accountId: accountId,
+          ).toMap()
+            ..remove('id'),
+        );
+      }
+    });
   }
 
   // ---------- Lent and Borrowed ----------

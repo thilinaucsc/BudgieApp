@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../db/database_helper.dart';
+import '../services/app_lock.dart';
 import '../services/backup_service.dart';
 import '../services/biometric_service.dart';
 import '../services/premium_service.dart';
 import '../services/theme_controller.dart';
+import 'accounts_screen.dart';
 import 'categories_screen.dart';
 import 'category_budgets_screen.dart';
 import 'debts_screen.dart';
@@ -40,6 +42,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _pinSet = false;
   bool _biometricAvailable = false;
   bool _biometricOn = false;
+  int _autoLock = 0;
   String? _googleEmail;
 
   @override
@@ -60,8 +63,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
           await db.getSetting(BiometricService.settingKey, '0') == '1';
       final biometricAvailable =
           await BiometricService.instance.isAvailable();
+      final autoLock =
+          AppLock.parse(await db.getSetting(AppLock.settingKey, '0'));
       if (!mounted) return;
       setState(() {
+        _autoLock = autoLock;
         _biometricOn = biometricOn;
         _biometricAvailable = biometricAvailable;
         _budget.text = b == null ? '' : b.toStringAsFixed(0);
@@ -110,6 +116,32 @@ class _SettingsScreenState extends State<SettingsScreen> {
       return;
     }
     await db.setSetting(BiometricService.settingKey, on ? '1' : '0');
+    await _load();
+  }
+
+  Future<void> _pickAutoLock() async {
+    final picked = await showDialog<int>(
+      context: context,
+      builder: (c) => SimpleDialog(
+        title: const Text('Ask for PIN again'),
+        children: [
+          for (final minutes in AppLock.choices)
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(c, minutes),
+              child: Row(
+                children: [
+                  Expanded(child: Text(AppLock.label(minutes))),
+                  if (minutes == _autoLock)
+                    Icon(Icons.check,
+                        color: Theme.of(context).colorScheme.primary),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+    if (picked == null) return;
+    await db.setSetting(AppLock.settingKey, '$picked');
     await _load();
   }
 
@@ -240,6 +272,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     onChanged: _toggleBiometric,
                   ),
                 ],
+                if (_pinSet) ...[
+                  const Divider(height: 1, indent: 56),
+                  ListTile(
+                    leading: const Icon(Icons.timer_outlined),
+                    title: const Text('Auto-lock'),
+                    subtitle: Text(AppLock.label(_autoLock)),
+                    trailing: const Icon(Icons.chevron_right, size: 20),
+                    onTap: _pickAutoLock,
+                  ),
+                ],
                 const Divider(height: 1, indent: 56),
                 if (!BackupService.isSupported)
                   const ListTile(
@@ -282,6 +324,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
             _sectionCard(
               'Planning',
               [
+                ListTile(
+                  leading: const Icon(Icons.account_balance_wallet_outlined),
+                  title: const Text('Accounts'),
+                  subtitle: const Text('Cash, bank and card balances'),
+                  trailing: const Icon(Icons.chevron_right, size: 20),
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const AccountsScreen()),
+                  ),
+                ),
+                const Divider(height: 1, indent: 56),
                 ListTile(
                   leading: const Icon(Icons.payments_outlined),
                   title: const Text('Income'),
